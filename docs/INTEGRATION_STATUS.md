@@ -44,7 +44,18 @@
 - **API Key**: ✅ Configured in `.env.local`
 - **Region**: `us-east-1`
 
-### 5. Clerk Authentication
+### 5. Yelp Fusion API
+- **Status**: ✅ Fully Integrated & Working
+- **File**: `app/api/integrations/yelp/route.ts`
+- **Features**:
+  - Business search by name and location
+  - Review retrieval and sentiment analysis
+  - Rating and review count data
+  - Latest reviews with sentiment classification
+- **Usage**: Restaurant reputation monitoring, review analysis
+- **API Key**: ✅ Configured in `.env.local`
+
+### 6. Clerk Authentication
 - **Status**: ✅ Fully Integrated & Working
 - **Features**:
   - User sign-up and sign-in
@@ -54,7 +65,7 @@
 - **Usage**: Authentication throughout the app
 - **Credentials**: ✅ Configured in `.env.local`
 
-### 6. Uber Eats API
+### 7. Uber Eats API
 - **Status**: ✅ Fully Configured & Ready
 - **Files**:
   - `lib/server/ubereats-oauth-service.ts` - OAuth service
@@ -111,6 +122,15 @@ AI Request → Nova Client → AWS Bedrock API
                             Response with Content & Usage
 ```
 
+### Yelp API Flow
+```
+Business Search → Yelp Fusion API → Business Data
+                                    ↓
+                            Reviews Endpoint → Review Data
+                                    ↓
+                            Sentiment Analysis → Insights
+```
+
 ## 🔧 Configuration
 
 ### Environment Variables Required
@@ -124,6 +144,9 @@ GOOGLE_MAPS_API_KEY=AIzaSyA3WFleYvgmKWAR93UGcQBeYdZmJ4uYIEM
 OPENAI_API_KEY=sk-proj-...
 AWS_NOVA_API_KEY=ABSKQmVkcm9ja0FQSUtleS13N3k3LWF0LTMwNTQyNDI4MjQ5MTpqd2VKaHpRMXk0Q3pEQzczQ3ZRVnJBaUhOVTg3UFdmVXBHSkY4MDV3MWNGYkRaU2RMSEJSS3Y4V05yRT0=
 AWS_REGION=us-east-1
+
+# Reviews ✅ Configured
+YELP_API_KEY=F7YnYDZFd7i-M_XhtM4SXSAny41CNMXt3O8LpxM5xA52gyVS6xPL_DnXDs2ecaJk2mSHzUA4cqyIQEjnV6WkSjXPo36g5GFOvZhTOlxSQ2OBlE0b1Nz4BmMPQtdjZnYx
 
 # Authentication ✅ Configured
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
@@ -143,6 +166,7 @@ UBEREATS_ENVIRONMENT=production
 - ✅ Google Maps geocoding and places
 - ✅ OpenAI-powered features
 - ✅ AWS Nova / Bedrock AI models
+- ✅ Yelp Fusion API for reviews
 - ✅ Clerk authentication
 - ✅ Uber Eats OAuth infrastructure
 - ✅ All dashboard features
@@ -192,6 +216,12 @@ To complete Uber Eats integration:
 - **Status**: ✅ Active
 - **Region**: us-east-1
 
+### Yelp Fusion API
+- **Free Tier**: 5,000 API calls/day
+- **Monitor**: https://fusion.yelp.com/manage
+- **Current Usage**: Business search, review retrieval
+- **Status**: ✅ Active
+
 ### Uber Eats API
 - **Pricing**: Contact Uber for pricing
 - **Monitor**: Uber Developer Dashboard
@@ -207,6 +237,7 @@ To complete Uber Eats integration:
 5. ✅ Tokens are stored securely (httpOnly cookies)
 6. ✅ Improved error messages don't expose sensitive data
 7. ✅ AWS Nova API key is base64 encoded
+8. ✅ Yelp API key is server-side only
 
 ## 📚 Documentation
 
@@ -223,11 +254,12 @@ With current integrations, users can:
 2. ✅ **See nearby restaurants** and points of interest
 3. ✅ **Get AI-powered recommendations** from OpenAI
 4. ✅ **Use AWS Nova models** for advanced AI operations
-5. ✅ **Authenticate securely** with Clerk
-6. ⚠️ **Connect Uber Eats** for order management (credentials configured, ready for OAuth)
-7. ⚠️ **Automate menu synchronization** across platforms (pending OAuth)
-8. ⚠️ **Receive real-time order notifications** (pending OAuth)
-9. ⚠️ **Analyze delivery performance** metrics (pending OAuth)
+5. ✅ **Monitor Yelp reviews** with sentiment analysis
+6. ✅ **Authenticate securely** with Clerk
+7. ⚠️ **Connect Uber Eats** for order management (credentials configured, ready for OAuth)
+8. ⚠️ **Automate menu synchronization** across platforms (pending OAuth)
+9. ⚠️ **Receive real-time order notifications** (pending OAuth)
+10. ⚠️ **Analyze delivery performance** metrics (pending OAuth)
 
 ## 🎯 Success Criteria
 
@@ -235,6 +267,7 @@ With current integrations, users can:
 - [x] Google Maps API integrated and working
 - [x] OpenAI API integrated and working
 - [x] AWS Nova / Bedrock integrated and working
+- [x] Yelp Fusion API integrated and working
 - [x] Clerk authentication integrated and working
 - [x] Uber Eats OAuth infrastructure ready
 - [x] Uber Eats credentials configured
@@ -253,15 +286,18 @@ For integration issues:
 - Google Maps: https://developers.google.com/maps/support
 - OpenAI: https://help.openai.com/
 - AWS Bedrock: https://docs.aws.amazon.com/bedrock/
+- Yelp Fusion: https://www.yelp.com/developers/documentation/v3
 - Uber Eats: https://developer.uber.com/support
 - Clerk: https://clerk.com/support
 
 ## 🔄 Recent Updates
 
 ### Latest Changes
+- ✅ Added Yelp Fusion API integration
+- ✅ Configured Yelp API key for business search and reviews
 - ✅ Added AWS Nova / Bedrock integration
 - ✅ Created Nova client with text completion and chat
-- ✅ Updated integration status panel with AWS Nova
+- ✅ Updated integration status panel with AWS Nova and Yelp
 - ✅ Configured AWS Nova API key and region
 - ✅ Improved Uber Eats error messages with setup guidance
 - ✅ Added setup guide modal in integration status panel
@@ -271,6 +307,7 @@ For integration issues:
 
 ### New Features
 - AWS Nova AI models for advanced analysis
+- Yelp review monitoring with sentiment analysis
 - Configurable AI model routing (OpenAI, AWS Nova, Claude)
 - Usage tracking for AI API calls
 - Improved error handling and user guidance
@@ -281,6 +318,7 @@ All major integrations are now configured and working:
 - ✅ Weather (OpenWeather)
 - ✅ Maps (Google Maps)
 - ✅ AI (OpenAI + AWS Nova)
+- ✅ Reviews (Yelp Fusion)
 - ✅ Authentication (Clerk)
 - ✅ Delivery (Uber Eats - ready for OAuth)
 
