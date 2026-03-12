@@ -1,0 +1,65 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+.tmp_pillow/
+.next_build_backup_*/
+.runtime/
+/backups/
+
+# local exported design/screenshot files in project root
+/Ai 建议.png
+/品牌logo图标.png
+/品牌logo文字.png
+/快速回滚.png
+/滑动确认执行.png
+/自媒体内容实时监控.png
+/自媒体账号一键回复.png
+/运营概况.png
+/app/api/integrations/weather/route 2.ts
+/app/api/social/meta/route 2.ts
+/restaurantiq-agents/docs.txt
+
+# accidental local key files
+/iqproject
+/iqproject.pub
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# python packaging artifacts
+*.egg-info/
