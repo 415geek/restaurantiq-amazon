@@ -1,334 +1,379 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
-import { RedisService } from '../redis/redis.service';
+import { UberEatsTokenService } from './ubereats-token.service';
+import axios, { AxiosInstance } from 'axios';
 import * as crypto from 'crypto';
-
-type OAuthResult = {
-  success: boolean;
-  accessToken?: string;
-  refreshToken?: string;
-  expiresIn?: number;
-  error?: string;
-};
-
-interface OAuthConfig {
-  clientId: string;
-  clientSecret: string;
-  redirectUri: string;
-  authUrl: string;
-  tokenUrl: string;
-  scopes: string[];
-}
-
-// Default Uber Eats scopes for delivery management
-const DEFAULT_SCOPES = [
-  'eats.store.read',
-  'eats.store.orders.read',
-  'eats.store.status.write',
-  'eats.store.orders.write',
-  'eats.pos_provisioning',
-  'eats.store.settings',
-];
 
 @Injectable()
 export class UberEatsService {
-  private config: OAuthConfig;
+  private apiClient: AxiosInstance;
+  private clientId: string;
+  private clientSecret: string;
+  private environment: string;
+  private apiBaseUrl: string;
+  private webhookSigningKey: string;
 
   constructor(
     private configService: ConfigService,
     private prisma: PrismaService,
-    private redis: RedisService,
+    private tokenService: UberEatsTokenService,
   ) {
-    this.config = {
-      clientId: this.configService.get<string>('UBEREATS_CLIENT_ID') || '',
-      clientSecret: this.configService.get<string>('UBEREATS_CLIENT_SECRET') || '',
-      redirectUri: `${this.configService.get<string>('NEXT_PUBLIC_APP_URL')}/api/v1/ubereats/auth/callback`,
-      authUrl: this.configService.get<string>('UBEREATS_OAUTH_AUTHORIZE_URL') || 'https://sandbox-login.uber.com/oauth/v2/authorize',
-      tokenUrl: this.configService.get<string>('UBEREATS_OAUTH_TOKEN_URL') || 'https://sandbox-login.uber.com/oauth/v2/token',
-      scopes: DEFAULT_SCOPES,
-    };
+    this.clientId = this.configService.get<string>('UBEREATS_CLIENT_ID')!;
+    this.clientSecret = this.configService.get<string>('UBEREATS_CLIENT_SECRET')!;
+    this.environment = this.configService.get<string>('UBEREATS_ENVIRONMENT') || 'sandbox';
+    this.apiBaseUrl = this.configService.get<string>('UBEREATS_API_BASE_URL') || 
+      (this.environment === 'production' ? 'https://api.uber.com' : 'https://sandbox-api.uber.com');
+    this.webhookSigningKey = this.configService.get<string>('UBEREATS_WEBHOOK_SIGNING_KEY')!;
+
+    this.apiClient = axios.create({
+      baseURL: this.apiBaseUrl,
+      timeout: 30000,
+    });
+
+    console.log('[Uber Eats Service] Initialized', {
+      environment: this.environment,
+      apiBaseUrl: this.apiBaseUrl,
+      clientId: this.clientId.substring(0, 8) + '...',
+    });
   }
 
   /**
    * Generate OAuth authorization URL
    */
-  generateAuthUrl(tenantId: string, storeId?: string): string {
-    const state = this.generateState(tenantId, storeId);
+  async getOAuthUrl(tenantId: string, redirectUri: string): Promise<{ url: string; state: string }> {
+    const state = crypto.randomBytes(32).toString('hex');
+    
+    // Store state in Redis for verification
+    await this.tokenService.cacheState(state, tenantId);
 
-    const params = new URLSearchParams({
-      client_id: this.config.clientId,
-      redirect_uri: this.config.redirectUri,
-      response_type: 'code',
-      state: state,
-      scope: this.config.scopes.join(' '),
+    const scopes = this.configService.get<string>('UBEREATS_AUTHORIZATION_CODE_SCOPES') || 
+      'eats.pos_provisioning';
+    
+    const authUrl = new URL(this.configService.get<string>('UBEREATS_OAUTH_AUTHORIZE_URL')!);
+    authUrl.searchParams.append('client_id', this.clientId);
+    authUrl.searchParams.append('response_type', 'code');
+    authUrl.searchParams.append('redirect_uri', redirectUri);
+    authUrl.searchParams.append('scope', scopes);
+    authUrl.searchParams.append('state', state);
+
+    console.log('[Uber Eats OAuth] Generated authorization URL', {
+      tenantId,
+      state: state.substring(0, 8) + '...',
     });
 
-    return `${this.config.authUrl}?${params.toString()}`;
+    return { url: authUrl.toString(), state };
   }
 
   /**
-   * Generate secure state parameter for CSRF protection
+   * Exchange authorization code for access token
    */
-  private generateState(tenantId: string, storeId?: string): string {
-    const stateData = {
-      tenantId,
-      storeId,
-      timestamp: Date.now(),
-      nonce: this.generateNonce(),
-    };
-    return Buffer.from(JSON.stringify(stateData)).toString('base64');
-  }
+  async exchangeCodeForToken(
+    code: string,
+    state: string,
+    redirectUri: string,
+  ): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
+    // Verify state
+    const tenantId = await this.tokenService.verifyState(state);
+    if (!tenantId) {
+      throw new BadRequestException('Invalid or expired state parameter');
+    }
 
-  /**
-   * Generate random nonce for security
-   */
-  private generateNonce(): string {
-    return Array.from(crypto.getRandomValues(new Uint8Array(16)))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-  }
-
-  /**
-   * Handle OAuth callback
-   */
-  async handleCallback(code: string, state: string): Promise<OAuthResult> {
     try {
-      // Parse and validate state
-      const stateData = this.parseState(state);
-      if (!stateData) {
-        return {
-          success: false,
-          error: 'Invalid state parameter',
-        };
-      }
-
-      // Exchange authorization code for tokens
-      const params = new URLSearchParams({
-        grant_type: 'authorization_code',
+      const tokenUrl = this.configService.get<string>('UBEREATS_OAUTH_TOKEN_URL')!;
+      
+      const response = await axios.post(tokenUrl, new URLSearchParams({
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
         code,
-        redirect_uri: this.config.redirectUri,
-        client_id: this.config.clientId,
-      });
-
-      const tokenResponse = await fetch(this.config.tokenUrl, {
-        method: 'POST',
+        grant_type: 'authorization_code',
+        redirect_uri: redirectUri,
+      }), {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
-          'Authorization': `Basic ${Buffer.from(`${this.config.clientId}:${this.config.clientSecret}`).toString('base64')}`,
         },
-        body: params.toString(),
-        cache: 'no-store',
       });
 
-      const tokenData = await this.parseTokenResponse(tokenResponse);
-      if (!tokenData) {
-        throw new Error('Failed to parse token response');
-      }
+      const tokens = response.data;
+      
+      console.log('[Uber Eats OAuth] Token exchange successful', {
+        tenantId,
+        accessToken: tokens.access_token.substring(0, 20) + '...',
+        expiresIn: tokens.expires_in,
+      });
 
       // Store tokens in database (encrypted)
-      await this.storeTokens(stateData.tenantId, stateData.storeId, {
-        accessToken: tokenData.access_token,
-        refreshToken: tokenData.refresh_token,
-        expiresIn: tokenData.expires_in,
+      await this.prisma.integration.upsert({
+        where: {
+          tenantId_platform: {
+            tenantId,
+            platform: 'UBEREATS',
+          },
+        },
+        create: {
+          tenantId,
+          platform: 'UBEREATS',
+          status: 'CONNECTED',
+          accessTokenEnc: tokens.access_token,
+          refreshTokenEnc: tokens.refresh_token,
+          tokenExpiresAt: new Date(Date.now() + tokens.expires_in * 1000),
+        },
+        update: {
+          status: 'CONNECTED',
+          accessTokenEnc: tokens.access_token,
+          refreshTokenEnc: tokens.refresh_token,
+          tokenExpiresAt: new Date(Date.now() + tokens.expires_in * 1000),
+          updatedAt: new Date(),
+        },
       });
 
-      return {
-        success: true,
-        accessToken: tokenData.access_token,
-        refreshToken: tokenData.refresh_token,
-        expiresIn: tokenData.expires_in,
-      };
-    } catch (error) {
-      console.error('[Uber Eats OAuth] Error exchanging authorization code:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      };
-    }
-  }
-
-  /**
-   * Parse state parameter
-   */
-  private parseState(state: string): { tenantId: string; storeId?: string } | null {
-    try {
-      const data = JSON.parse(Buffer.from(state, 'base64').toString());
-      
-      // Validate timestamp (state expires after 10 minutes)
-      if (Date.now() - data.timestamp > 10 * 60 * 1000) {
-        return null;
-      }
+      // Cache token in Redis
+      await this.tokenService.cacheToken(tenantId, tokens.access_token, tokens.expires_in);
 
       return {
-        tenantId: data.tenantId,
-        storeId: data.storeId,
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in,
       };
-    } catch {
-      return null;
+    } catch (error: any) {
+      console.error('[Uber Eats OAuth] Token exchange failed', {
+        error: error.message,
+        response: error.response?.data,
+      });
+      throw new BadRequestException('Failed to exchange authorization code for token');
     }
   }
 
   /**
-   * Parse Uber OAuth token response
+   * Refresh access token using refresh token
    */
-  private async parseTokenResponse(response: Response): Promise<{
-    access_token?: string;
-    refresh_token?: string;
-    expires_in?: number;
-  } | null> {
-    const text = await response.text();
-    try {
-      const data = JSON.parse(text);
-      return {
-        access_token: data.access_token,
-        refresh_token: data.refresh_token,
-        expires_in: data.expires_in,
-      };
-    } catch (error) {
-      console.error('[Uber Eats OAuth] Error parsing token response:', error);
-      
-      // Try text/x-www-form-urlencoded format
-      try {
-        const params = new URLSearchParams(text);
-        return {
-          access_token: params.get('access_token') || undefined,
-          refresh_token: params.get('refresh_token') || undefined,
-          expires_in: params.get('expires_in') ? parseInt(params.get('expires_in') || '') : undefined,
-        };
-      } catch {
-        return null;
-      }
-    }
-  }
-
-  /**
-   * Store OAuth tokens in database (encrypted)
-   */
-  private async storeTokens(
-    tenantId: string,
-    storeId: string | undefined,
-    tokens: {
-      accessToken: string;
-      refreshToken?: string;
-      expiresIn?: number;
-    },
-  ): Promise<void> {
-    // TODO: Implement AES-256 encryption
-    const accessTokenEnc = tokens.accessToken; // Will be encrypted
-    const refreshTokenEnc = tokens.refreshToken; // Will be encrypted
-    const tokenExpiresAt = tokens.expiresIn
-      ? new Date(Date.now() + tokens.expiresIn * 1000)
-      : null;
-
-    // Find or create integration
-    const integration = await this.prisma.integration.upsert({
-      where: {
-        tenantId_platform_platformStoreId: {
-          tenantId,
-          platform: 'UBEREATS',
-          platformStoreId: storeId || 'default',
-        },
-      },
-      update: {
-        status: 'CONNECTED',
-        accessTokenEnc,
-        refreshTokenEnc,
-        tokenExpiresAt,
-        lastSyncAt: new Date(),
-      },
-      create: {
-        tenantId,
-        platform: 'UBEREATS',
-        platformStoreId: storeId || 'default',
-        status: 'CONNECTED',
-        accessTokenEnc,
-        refreshTokenEnc,
-        tokenExpiresAt,
-        lastSyncAt: new Date(),
-      },
-    });
-
-    console.log(`[Uber Eats OAuth] Tokens stored for integration ${integration.id}`);
-  }
-
-  /**
-   * Get OAuth configuration status
-   */
-  getConfigStatus(): { configured: boolean; issues: string[] } {
-    const issues: string[] = [];
-
-    if (!this.config.clientId) {
-      issues.push('UBEREATS_CLIENT_ID not configured');
-    }
-    if (!this.config.clientSecret) {
-      issues.push('UBEREATS_CLIENT_SECRET not configured');
-    }
-    if (!this.config.redirectUri) {
-      issues.push('NEXT_PUBLIC_APP_URL not configured for redirect URI');
-    }
-    if (!this.config.authUrl) {
-      issues.push('UBEREATS_OAUTH_AUTHORIZE_URL not configured');
-    }
-    if (!this.config.tokenUrl) {
-      issues.push('UBEREATS_OAUTH_TOKEN_URL not configured');
-    }
-
-    return {
-      configured: issues.length === 0,
-      issues,
-    };
-  }
-
-  /**
-   * Disconnect Uber Eats integration
-   */
-  async disconnect(tenantId: string, storeId?: string): Promise<void> {
-    await this.prisma.integration.updateMany({
-      where: {
-        tenantId,
-        platform: 'UBEREATS',
-        platformStoreId: storeId || 'default',
-      },
-      data: {
-        status: 'DISCONNECTED',
-        accessTokenEnc: null,
-        refreshTokenEnc: null,
-        tokenExpiresAt: null,
-      },
-    });
-
-    // Clear Redis cache
-    await this.redis.del(`token:ubereats:${tenantId}`);
-  }
-
-  /**
-   * Get connection status
-   */
-  async getConnectionStatus(tenantId: string, storeId?: string) {
+  async refreshAccessToken(tenantId: string): Promise<string> {
     const integration = await this.prisma.integration.findUnique({
       where: {
-        tenantId_platform_platformStoreId: {
+        tenantId_platform: {
           tenantId,
           platform: 'UBEREATS',
-          platformStoreId: storeId || 'default',
+        },
+      },
+    });
+
+    if (!integration || !integration.refreshTokenEnc) {
+      throw new UnauthorizedException('No refresh token found');
+    }
+
+    try {
+      const tokenUrl = this.configService.get<string>('UBEREATS_OAUTH_TOKEN_URL')!;
+      
+      const response = await axios.post(tokenUrl, new URLSearchParams({
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+        refresh_token: integration.refreshTokenEnc,
+        grant_type: 'refresh_token',
+      }), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      });
+
+      const tokens = response.data;
+      
+      console.log('[Uber Eats OAuth] Token refresh successful', {
+        tenantId,
+        accessToken: tokens.access_token.substring(0, 20) + '...',
+        expiresIn: tokens.expires_in,
+      });
+
+      // Update tokens in database
+      await this.prisma.integration.update({
+        where: { id: integration.id },
+        data: {
+          accessTokenEnc: tokens.access_token,
+          refreshTokenEnc: tokens.refresh_token || integration.refreshTokenEnc,
+          tokenExpiresAt: new Date(Date.now() + tokens.expires_in * 1000),
+          updatedAt: new Date(),
+        },
+      });
+
+      // Cache token in Redis
+      await this.tokenService.cacheToken(tenantId, tokens.access_token, tokens.expires_in);
+
+      return tokens.access_token;
+    } catch (error: any) {
+      console.error('[Uber Eats OAuth] Token refresh failed', {
+        error: error.message,
+        response: error.response?.data,
+      });
+      
+      // Mark integration as error
+      await this.prisma.integration.update({
+        where: { id: integration.id },
+        data: { status: 'ERROR' },
+      });
+
+      throw new UnauthorizedException('Failed to refresh access token');
+    }
+  }
+
+  /**
+   * Get access token (with auto-refresh)
+   */
+  async getAccessToken(tenantId: string): Promise<string> {
+    // Check cache first
+    const cachedToken = await this.tokenService.getCachedToken(tenantId);
+    if (cachedToken) {
+      return cachedToken;
+    }
+
+    // Check database
+    const integration = await this.prisma.integration.findUnique({
+      where: {
+        tenantId_platform: {
+          tenantId,
+          platform: 'UBEREATS',
         },
       },
     });
 
     if (!integration) {
-      return {
-        connected: false,
-        status: 'DISCONNECTED',
-      };
+      throw new UnauthorizedException('Uber Eats not connected');
+    }
+
+    // Check if token is expired
+    if (integration.tokenExpiresAt && integration.tokenExpiresAt < new Date()) {
+      console.log('[Uber Eats OAuth] Token expired, refreshing...', { tenantId });
+      return this.refreshAccessToken(tenantId);
+    }
+
+    // Cache and return
+    const expiresIn = integration.tokenExpiresAt 
+      ? Math.floor((integration.tokenExpiresAt.getTime() - Date.now()) / 1000)
+      : 3600;
+    
+    await this.tokenService.cacheToken(tenantId, integration.accessTokenEnc!, expiresIn);
+    return integration.accessTokenEnc!;
+  }
+
+  /**
+   * Disconnect Uber Eats integration
+   */
+  async disconnect(tenantId: string): Promise<void> {
+    await this.prisma.integration.deleteMany({
+      where: {
+        tenantId,
+        platform: 'UBEREATS',
+      },
+    });
+
+    // Clear cache
+    await this.tokenService.clearCachedToken(tenantId);
+
+    console.log('[Uber Eats OAuth] Disconnected', { tenantId });
+  }
+
+  /**
+   * Get OAuth status
+   */
+  async getAuthStatus(tenantId: string): Promise<{
+    connected: boolean;
+    status: string;
+    storeId?: string;
+    lastSyncAt?: Date;
+  }> {
+    const integration = await this.prisma.integration.findUnique({
+      where: {
+        tenantId_platform: {
+          tenantId,
+          platform: 'UBEREATS',
+        },
+      },
+    });
+
+    if (!integration) {
+      return { connected: false, status: 'DISCONNECTED' };
     }
 
     return {
       connected: integration.status === 'CONNECTED',
       status: integration.status,
-      platformStoreId: integration.platformStoreId,
-      platformStoreName: integration.platformStoreName,
-      lastSyncAt: integration.lastSyncAt,
+      storeId: integration.platformStoreId || undefined,
+      lastSyncAt: integration.lastSyncAt || undefined,
     };
+  }
+
+  /**
+   * Verify webhook signature
+   */
+  verifyWebhookSignature(payload: string, signature: string): boolean {
+    const hmac = crypto.createHmac('sha256', this.webhookSigningKey);
+    hmac.update(payload);
+    const expectedSignature = hmac.digest('hex');
+    
+    const isValid = crypto.timingSafeEqual(
+      Buffer.from(signature),
+      Buffer.from(expectedSignature),
+    );
+
+    if (!isValid) {
+      console.error('[Uber Eats Webhook] Signature verification failed', {
+        received: signature,
+        expected: expectedSignature,
+      });
+    }
+
+    return isValid;
+  }
+
+  /**
+   * Make authenticated API request
+   */
+  async makeAuthenticatedRequest(
+    tenantId: string,
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    endpoint: string,
+    data?: any,
+  ): Promise<any> {
+    const accessToken = await this.getAccessToken(tenantId);
+
+    try {
+      const response = await this.apiClient.request({
+        method,
+        url: endpoint,
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        data,
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('[Uber Eats API] Request failed', {
+        method,
+        endpoint,
+        error: error.message,
+        response: error.response?.data,
+      });
+
+      if (error.response?.status === 401) {
+        // Token might be expired, try refresh
+        await this.refreshAccessToken(tenantId);
+        const newAccessToken = await this.getAccessToken(tenantId);
+        
+        // Retry with new token
+        const retryResponse = await this.apiClient.request({
+          method,
+          url: endpoint,
+          headers: {
+            'Authorization': `Bearer ${newAccessToken}`,
+            'Content-Type': 'application/json',
+          },
+          data,
+        });
+
+        return retryResponse.data;
+      }
+
+      throw error;
+    }
   }
 }

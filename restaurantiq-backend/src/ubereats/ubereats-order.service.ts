@@ -1,297 +1,451 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { UberEatsService } from './ubereats.service';
 import { DeliveryGateway } from '../delivery/delivery.gateway';
 
-type DeliveryOrderStatus = 'new' | 'accepted' | 'preparing' | 'ready' | 'completed' | 'cancelled';
-
-type UberWebhookOrder = {
-  id: string;
-  channelOrderId: string;
-  customerName: string;
-  status: DeliveryOrderStatus;
-  placedAt: string;
-  amount: number;
-  etaMins: number;
-  items: string[];
+export interface UberEatsOrderPayload {
+  order_id: string;
+  display_id: string;
+  status: string;
+  created_at: string;
+  customer: {
+    first_name: string;
+    last_name: string;
+  };
+  cart: {
+    items: Array<{
+      name: string;
+      quantity: number;
+      price: {
+        amount: number;
+        currency: string;
+      };
+    }>;
+    subtotal: {
+      amount: number;
+      currency: string;
+    };
+    tax: {
+      amount: number;
+      currency: string;
+    };
+    delivery_fee: {
+      amount: number;
+      currency: string;
+    };
+    tip: {
+      amount: number;
+      currency: string;
+    };
+    total: {
+      amount: number;
+      currency: string;
+    };
+  };
+  delivery: {
+    dropoff: {
+      location: {
+        address: {
+          street_address: string;
+          city: string;
+          state: string;
+          postal_code: string;
+        };
+      };
+    };
+    estimated_delivery_time?: string;
+  };
   notes?: string;
-  storeId?: string;
-  raw: Record<string, unknown>;
-  receivedAt: string;
-};
+}
 
 @Injectable()
 export class UberEatsOrderService {
+  private readonly logger = new Logger(UberEatsOrderService.name);
+
   constructor(
     private prisma: PrismaService,
+    private uberEatsService: UberEatsService,
     private deliveryGateway: DeliveryGateway,
-  ) {}
+  ) {
+    this.logger.log('[Uber Eats Order Service] Initialized');
+  }
 
   /**
-   * Parse Uber Eats webhook payload to normalized order
+   * Parse and normalize Uber Eats order payload
    */
-  parseWebhookOrder(payload: any, storeId?: string): UberWebhookOrder | null {
-    const orderRecord = this.findOrderRecord(payload);
-    const id = this.pickString(orderRecord, ['id', 'order_id', 'orderId', 'uuid', 'order.uuid', 'order.id']) ??
-                 this.pickString(payload, ['id', 'order_id', 'orderId', 'uuid']);
-    
-    if (!id) return null;
-
-    const status = this.statusFromTopic(
-      this.pickString(orderRecord, ['status', 'state', 'fulfillment_status']) ??
-      payload.eventType ??
-      payload.topic ??
-      null
-    ) ?? 'new';
-
-    const channelOrderId = this.pickString(orderRecord, ['display_id', 'order_number', 'order_id', 'orderId', 'id']) ?? id;
-
-    const customerName = this.pickString(orderRecord, [
-      'customer_name',
-      'customer.name',
-      'consumer.name',
-      'delivery.recipient_name',
-      'eater.name',
-      'eater.first_name',
-    ]) ?? this.pickString(payload, ['customer_name', 'customer.name']) ?? 'Unknown';
-
-    const placedAt = this.normalizeIso(
-      this.readByPath(orderRecord, 'created_at') ??
-      this.readByPath(orderRecord, 'createdAt') ??
-      this.readByPath(orderRecord, 'placed_at') ??
-      this.readByPath(orderRecord, 'requested_at') ??
-      this.readByPath(orderRecord, 'timestamps.created_at') ??
-      payload.created_at,
-      new Date().toISOString()
-    );
-
-    const amount = this.pickNumber(orderRecord, [
-      'total',
-      'total_amount',
-      'total.value',
-      'payment.total.amount',
-      'price.total.amount',
-      'basket.total.amount',
-      'order_total',
-      'subtotal',
-    ]) ?? this.pickNumber(payload, ['total', 'total_amount']) ?? 0;
-
-    const etaMins = Math.max(
-      0,
-      Math.round(
-        this.pickNumber(orderRecord, [
-          'eta_mins',
-          'eta_minutes',
-          'estimated_prep_time_minutes',
-          'fulfillment.eta_minutes',
-        ]) ?? 0
-      )
-    );
-
-    const items = this.extractItemNames(orderRecord);
-    const notes = this.pickString(orderRecord, ['notes', 'special_instructions', 'delivery_notes', 'customer_note']) ??
-                  this.pickString(payload, ['notes', 'special_instructions']) ??
-                  undefined;
+  parseOrderPayload(payload: UberEatsOrderPayload): any {
+    const items = payload.cart.items.map(item => ({
+      name: item.name,
+      quantity: item.quantity,
+      price: item.price.amount,
+    }));
 
     return {
-      id,
-      channelOrderId,
-      customerName,
-      status,
-      placedAt,
-      amount,
-      etaMins,
+      platformOrderId: payload.order_id,
+      displayOrderId: payload.display_id,
+      status: this.mapStatus(payload.status),
+      customerName: `${payload.customer.first_name} ${payload.customer.last_name}`.trim() || 'Unknown',
       items,
-      notes,
-      storeId,
-      raw: orderRecord,
-      receivedAt: new Date().toISOString(),
+      subtotal: payload.cart.subtotal.amount,
+      tax: payload.cart.tax?.amount || 0,
+      deliveryFee: payload.cart.delivery_fee?.amount || 0,
+      tip: payload.cart.tip?.amount || 0,
+      total: payload.cart.total.amount,
+      notes: payload.notes || null,
+      etaMins: this.calculateEta(payload.delivery.estimated_delivery_time),
+      placedAt: new Date(payload.created_at),
+      rawPayload: payload,
     };
+  }
+
+  /**
+   * Map Uber Eats status to internal status
+   */
+  private mapStatus(uberStatus: string): string {
+    const statusMap: Record<string, string> = {
+      'new': 'NEW',
+      'accepted': 'ACCEPTED',
+      'preparing': 'PREPARING',
+      'ready_for_pickup': 'READY',
+      'driver_at_pickup': 'READY',
+      'on_the_way': 'READY',
+      'delivered': 'COMPLETED',
+      'cancelled': 'CANCELLED',
+      'rejected': 'CANCELLED',
+    };
+
+    return statusMap[uberStatus] || 'NEW';
+  }
+
+  /**
+   * Calculate ETA in minutes
+   */
+  private calculateEta(estimatedTime?: string): number {
+    if (!estimatedTime) return 0;
+
+    try {
+      const eta = new Date(estimatedTime);
+      const now = new Date();
+      const diffMs = eta.getTime() - now.getTime();
+      return Math.max(0, Math.floor(diffMs / 60000)); // Convert to minutes
+    } catch (error) {
+      this.logger.error('[Uber Eats Order Service] Failed to calculate ETA', { error });
+      return 0;
+    }
   }
 
   /**
    * Save order to database
    */
-  async saveOrder(tenantId: string, order: UberWebhookOrder): Promise<void> {
-    // Check if order already exists
-    const existingOrder = await this.prisma.order.findUnique({
-      where: {
-        platform_platformOrderId: {
-          platform: 'UBEREATS',
-          platformOrderId: order.id,
-        },
-      },
-    });
+  async saveOrder(tenantId: string, restaurantId: string, payload: UberEatsOrderPayload): Promise<any> {
+    const normalizedOrder = this.parseOrderPayload(payload);
 
-    if (existingOrder) {
-      // Update existing order
-      await this.prisma.order.update({
-        where: { id: existingOrder.id },
-        data: {
-          status: order.status,
-          customerName: order.customerName,
-          items: order.items,
-          subtotal: order.amount,
-          notes: order.notes,
-          etaMins: order.etaMins,
-          rawPayload: order.raw,
+    try {
+      const order = await this.prisma.order.upsert({
+        where: {
+          platform_platformOrderId: {
+            platform: 'UBEREATS',
+            platformOrderId: normalizedOrder.platformOrderId,
+          },
+        },
+        create: {
+          tenantId,
+          restaurantId,
+          platform: 'UBEREATS',
+          platformOrderId: normalizedOrder.platformOrderId,
+          displayOrderId: normalizedOrder.displayOrderId,
+          status: normalizedOrder.status,
+          customerName: normalizedOrder.customerName,
+          items: normalizedOrder.items,
+          subtotal: normalizedOrder.subtotal,
+          tax: normalizedOrder.tax,
+          deliveryFee: normalizedOrder.deliveryFee,
+          tip: normalizedOrder.tip,
+          total: normalizedOrder.total,
+          notes: normalizedOrder.notes,
+          etaMins: normalizedOrder.etaMins,
+          placedAt: normalizedOrder.placedAt,
+          rawPayload: normalizedOrder.rawPayload,
+          source: 'WEBHOOK',
+        },
+        update: {
+          status: normalizedOrder.status,
+          notes: normalizedOrder.notes,
+          etaMins: normalizedOrder.etaMins,
+          rawPayload: normalizedOrder.rawPayload,
           updatedAt: new Date(),
         },
       });
 
-      console.log(`[Uber Eats Order] Updated order ${order.id}`);
-    } else {
-      // Create new order
-      await this.prisma.order.create({
-        data: {
+      this.logger.log('[Uber Eats Order Service] Order saved', {
+        orderId: order.id,
+        platformOrderId: order.platformOrderId,
+        status: order.status,
+      });
+
+      return order;
+    } catch (error: any) {
+      this.logger.error('[Uber Eats Order Service] Failed to save order', {
+        error: error.message,
+        platformOrderId: normalizedOrder.platformOrderId,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Update order status
+   */
+  async updateOrderStatus(
+    tenantId: string,
+    platformOrderId: string,
+    status: string,
+    payload?: any,
+  ): Promise<any> {
+    try {
+      const order = await this.prisma.order.updateMany({
+        where: {
           tenantId,
           platform: 'UBEREATS',
-          platformOrderId: order.id,
-          displayOrderId: order.channelOrderId,
-          status: order.status,
-          customerName: order.customerName,
-          items: order.items,
-          subtotal: order.amount,
-          total: order.amount,
-          notes: order.notes,
-          etaMins: order.etaMins,
-          placedAt: new Date(order.placedAt),
-          rawPayload: order.raw,
-          source: 'WEBHOOK',
+          platformOrderId,
+        },
+        data: {
+          status: this.mapStatus(status),
+          rawPayload: payload,
+          updatedAt: new Date(),
         },
       });
 
-      console.log(`[Uber Eats Order] Created new order ${order.id}`);
+      this.logger.log('[Uber Eats Order Service] Order status updated', {
+        platformOrderId,
+        status,
+        count: order.count,
+      });
 
-      // Broadcast new order event via WebSocket
-      await this.deliveryGateway.broadcastOrderEvent(tenantId, 'order:new', {
-        id: order.id,
-        displayOrderId: order.channelOrderId,
+      return order;
+    } catch (error: any) {
+      this.logger.error('[Uber Eats Order Service] Failed to update order status', {
+        error: error.message,
+        platformOrderId,
+        status,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get order by platform order ID
+   */
+  async getOrderByPlatformId(tenantId: string, platformOrderId: string): Promise<any> {
+    return this.prisma.order.findFirst({
+      where: {
+        tenantId,
         platform: 'UBEREATS',
-        status: order.status,
-        customerName: order.customerName,
-        amount: order.amount,
-        items: order.items,
-        placedAt: order.placedAt,
-        etaMins: order.etaMins,
+        platformOrderId,
+      },
+    });
+  }
+
+  /**
+   * Get recent orders
+   */
+  async getRecentOrders(tenantId: string, limit: number = 50): Promise<any[]> {
+    return this.prisma.order.findMany({
+      where: {
+        tenantId,
+        platform: 'UBEREATS',
+      },
+      orderBy: {
+        placedAt: 'desc',
+      },
+      take: limit,
+    });
+  }
+
+  /**
+   * Get orders by status
+   */
+  async getOrdersByStatus(tenantId: string, status: string): Promise<any[]> {
+    return this.prisma.order.findMany({
+      where: {
+        tenantId,
+        platform: 'UBEREATS',
+        status,
+      },
+      orderBy: {
+        placedAt: 'desc',
+      },
+    });
+  }
+
+  /**
+   * Accept order on Uber Eats platform
+   */
+  async acceptOrder(tenantId: string, platformOrderId: string): Promise<void> {
+    try {
+      await this.uberEatsService.makeAuthenticatedRequest(
+        tenantId,
+        'POST',
+        `/v1/eats/orders/${platformOrderId}/accept`,
+      );
+
+      // Update local status
+      await this.updateOrderStatus(tenantId, platformOrderId, 'accepted');
+
+      this.logger.log('[Uber Eats Order Service] Order accepted', { platformOrderId });
+    } catch (error: any) {
+      this.logger.error('[Uber Eats Order Service] Failed to accept order', {
+        error: error.message,
+        platformOrderId,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Cancel order on Uber Eats platform
+   */
+  async cancelOrder(
+    tenantId: string,
+    platformOrderId: string,
+    reason: string,
+  ): Promise<void> {
+    try {
+      await this.uberEatsService.makeAuthenticatedRequest(
+        tenantId,
+        'POST',
+        `/v1/eats/orders/${platformOrderId}/cancel`,
+        { reason },
+      );
+
+      // Update local status
+      await this.updateOrderStatus(tenantId, platformOrderId, 'cancelled');
+
+      this.logger.log('[Uber Eats Order Service] Order cancelled', {
+        platformOrderId,
+        reason,
+      });
+    } catch (error: any) {
+      this.logger.error('[Uber Eats Order Service] Failed to cancel order', {
+        error: error.message,
+        platformOrderId,
+        reason,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Update order status on Uber Eats platform
+   */
+  async updateOrderStatusOnPlatform(
+    tenantId: string,
+    platformOrderId: string,
+    status: 'preparing' | 'ready_for_pickup' | 'driver_at_pickup',
+  ): Promise<void> {
+    try {
+      await this.uberEatsService.makeAuthenticatedRequest(
+        tenantId,
+        'POST',
+        `/v1/eats/orders/${platformOrderId}/status`,
+        { status },
+      );
+
+      // Update local status
+      await this.updateOrderStatus(tenantId, platformOrderId, status);
+
+      this.logger.log('[Uber Eats Order Service] Order status updated on platform', {
+        platformOrderId,
+        status,
+      });
+    } catch (error: any) {
+      this.logger.error('[Uber Eats Order Service] Failed to update order status on platform', {
+        error: error.message,
+        platformOrderId,
+        status,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Broadcast order event via WebSocket
+   */
+  async broadcastOrderEvent(tenantId: string, eventType: string, order: any): Promise<void> {
+    await this.deliveryGateway.broadcastOrderEvent(tenantId, eventType, order);
+    
+    this.logger.log('[Uber Eats Order Service] Order event broadcasted', {
+      tenantId,
+      eventType,
+      orderId: order.id,
+    });
+  }
+
+  /**
+   * Handle new order webhook
+   */
+  async handleNewOrder(tenantId: string, restaurantId: string, payload: UberEatsOrderPayload): Promise<void> {
+    // Save order to database
+    const order = await this.saveOrder(tenantId, restaurantId, payload);
+
+    // Broadcast new order event
+    await this.broadcastOrderEvent(tenantId, 'order:new', order);
+
+    this.logger.log('[Uber Eats Order Service] New order handled', {
+      orderId: order.id,
+      platformOrderId: order.platformOrderId,
+    });
+  }
+
+  /**
+   * Handle order status update webhook
+   */
+  async handleOrderStatusUpdate(
+    tenantId: string,
+    platformOrderId: string,
+    status: string,
+    payload: any,
+  ): Promise<void> {
+    // Update order status
+    await this.updateOrderStatus(tenantId, platformOrderId, status, payload);
+
+    // Get updated order
+    const order = await this.getOrderByPlatformId(tenantId, platformOrderId);
+
+    if (order) {
+      // Broadcast order update event
+      await this.broadcastOrderEvent(tenantId, 'order:updated', order);
+
+      this.logger.log('[Uber Eats Order Service] Order status update handled', {
+        orderId: order.id,
+        platformOrderId,
+        status,
       });
     }
   }
 
   /**
-   * Helper methods for parsing
+   * Handle order cancellation webhook
    */
-  private asRecord(value: unknown): Record<string, unknown> | null {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-    return value as Record<string, unknown>;
-  }
+  async handleOrderCancellation(
+    tenantId: string,
+    platformOrderId: string,
+    payload: any,
+  ): Promise<void> {
+    // Update order status
+    await this.updateOrderStatus(tenantId, platformOrderId, 'cancelled', payload);
 
-  private safeString(value: unknown): string | null {
-    if (typeof value === 'string' && value.trim()) return value.trim();
-    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
-    return null;
-  }
+    // Get updated order
+    const order = await this.getOrderByPlatformId(tenantId, platformOrderId);
 
-  private safeNumber(value: unknown): number | null {
-    if (typeof value === 'number' && Number.isFinite(value)) return value;
-    if (typeof value === 'string') {
-      const cleaned = value.replace(/[$,%￥¥,]/g, '').trim();
-      if (!cleaned) return null;
-      const parsed = Number(cleaned);
-      return Number.isFinite(parsed) ? parsed : null;
+    if (order) {
+      // Broadcast order cancellation event
+      await this.broadcastOrderEvent(tenantId, 'order:cancelled', order);
+
+      this.logger.log('[Uber Eats Order Service] Order cancellation handled', {
+        orderId: order.id,
+        platformOrderId,
+      });
     }
-    return null;
-  }
-
-  private readByPath(record: Record<string, unknown>, path: string) {
-    const segments = path.split('.');
-    let cursor: unknown = record;
-    for (const segment of segments) {
-      const current = this.asRecord(cursor);
-      if (!current) return undefined;
-      cursor = current[segment];
-    }
-    return cursor;
-  }
-
-  private pickString(record: Record<string, unknown>, paths: string[]): string | null {
-    for (const path of paths) {
-      const value = this.safeString(this.readByPath(record, path));
-      if (value) return value;
-    }
-    return null;
-  }
-
-  private pickNumber(record: Record<string, unknown>, paths: string[]): number | null {
-    for (const path of paths) {
-      const value = this.safeNumber(this.readByPath(record, path));
-      if (value !== null) return value;
-    }
-    return null;
-  }
-
-  private normalizeIso(value: unknown, fallbackIso: string): string {
-    const text = this.safeString(value);
-    if (!text) return fallbackIso;
-    const ts = Date.parse(text);
-    if (!Number.isFinite(ts)) return fallbackIso;
-    return new Date(ts).toISOString();
-  }
-
-  private statusFromTopic(value: string | null): DeliveryOrderStatus | null {
-    if (!value) return null;
-    const normalized = value.toLowerCase();
-    if (normalized.includes('cancel')) return 'cancelled';
-    if (normalized.includes('complete') || normalized.includes('deliver')) return 'completed';
-    if (normalized.includes('ready') || normalized.includes('pickup')) return 'ready';
-    if (normalized.includes('prep') || normalized.includes('cook') || normalized.includes('kitchen')) return 'preparing';
-    if (normalized.includes('accept') || normalized.includes('confirm')) return 'accepted';
-    if (normalized.includes('created') || normalized.includes('new') || normalized.includes('placed')) return 'new';
-    return null;
-  }
-
-  private findOrderRecord(payload: unknown): Record<string, unknown> {
-    const root = this.asRecord(payload) ?? {};
-    const directOrder = this.asRecord(root.order);
-    if (directOrder) return directOrder;
-
-    const data = this.asRecord(root.data);
-    if (data) {
-      const dataOrder = this.asRecord(data.order);
-      if (dataOrder) return dataOrder;
-      const hasOrderIdentity = Boolean(
-        this.pickString(data, ['id', 'order_id', 'orderId', 'uuid', 'display_id', 'order_number'])
-      );
-      if (hasOrderIdentity) return data;
-    }
-
-    return root;
-  }
-
-  private extractItemNames(orderRecord: Record<string, unknown>): string[] {
-    const candidates = [
-      this.readByPath(orderRecord, 'items'),
-      this.readByPath(orderRecord, 'order.items'),
-      this.readByPath(orderRecord, 'line_items'),
-      this.readByPath(orderRecord, 'basket.items'),
-      this.readByPath(orderRecord, 'cart.items'),
-    ];
-
-    for (const candidate of candidates) {
-      if (!Array.isArray(candidate)) continue;
-      const names = candidate
-        .map((row) => {
-          const record = this.asRecord(row);
-          if (!record) return null;
-          return (
-            this.pickString(record, ['name', 'title', 'item_name', 'product_name']) ??
-            this.pickString(record, ['product.name'])
-          );
-        })
-        .filter((value): value is string => Boolean(value));
-
-      if (names.length) return names;
-    }
-
-    return [];
   }
 }

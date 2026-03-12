@@ -1,20 +1,15 @@
-import { Controller, Get, Post, Param, Body, Query, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, BadRequestException } from '@nestjs/common';
 import { DeliveryService } from './delivery.service';
-
-type DeliveryOrderStatus = 'new' | 'accepted' | 'preparing' | 'ready' | 'completed' | 'cancelled';
 
 @Controller('orders')
 export class DeliveryController {
   constructor(private readonly deliveryService: DeliveryService) {}
 
-  /**
-   * Get orders with filters
-   */
   @Get()
   async getOrders(
     @Query('tenantId') tenantId: string,
     @Query('platform') platform?: string,
-    @Query('status') status?: DeliveryOrderStatus,
+    @Query('status') status?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('limit') limit?: string,
@@ -24,133 +19,74 @@ export class DeliveryController {
       throw new BadRequestException('tenantId is required');
     }
 
-    const result = await this.deliveryService.getOrders({
+    return this.deliveryService.getOrders({
       tenantId,
       platform,
       status,
-      from,
-      to,
+      from: from ? new Date(from) : undefined,
+      to: to ? new Date(to) : undefined,
       limit: limit ? parseInt(limit) : undefined,
       offset: offset ? parseInt(offset) : undefined,
     });
-
-    return result;
   }
 
-  /**
-   * Get order by ID
-   */
+  @Get('kanban')
+  async getKanbanOrders(@Query('tenantId') tenantId: string) {
+    if (!tenantId) {
+      throw new BadRequestException('tenantId is required');
+    }
+    return this.deliveryService.getKanbanOrders(tenantId);
+  }
+
+  @Get('stats')
+  async getOrderStats(
+    @Query('tenantId') tenantId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    if (!tenantId) {
+      throw new BadRequestException('tenantId is required');
+    }
+    return this.deliveryService.getOrderStats(
+      tenantId,
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+    );
+  }
+
   @Get(':id')
-  async getOrder(@Param('id') id: string) {
-    try {
-      const order = await this.deliveryService.getOrderById(id);
-      return order;
-    } catch (error) {
-      throw new NotFoundException('Order not found');
+  async getOrder(@Param('id') id: string, @Query('tenantId') tenantId: string) {
+    if (!tenantId) {
+      throw new BadRequestException('tenantId is required');
     }
+    return this.deliveryService.getOrderById(id, tenantId);
   }
 
-  /**
-   * Accept order
-   */
   @Post(':id/accept')
-  async acceptOrder(
-    @Param('id') id: string,
-    @Body() body: { tenantId: string },
-  ) {
-    if (!body.tenantId) {
-      throw new BadRequestException('tenantId is required');
-    }
-
-    try {
-      const order = await this.deliveryService.acceptOrder(id, body.tenantId);
-      return { success: true, order };
-    } catch (error) {
-      throw new BadRequestException(error instanceof Error ? error.message : 'Failed to accept order');
-    }
+  async acceptOrder(@Param('id') id: string, @Body() body: { tenantId: string }) {
+    return this.deliveryService.acceptOrder(id, body.tenantId);
   }
 
-  /**
-   * Start preparation
-   */
   @Post(':id/start-prep')
-  async startPrep(
-    @Param('id') id: string,
-    @Body() body: { tenantId: string },
-  ) {
-    if (!body.tenantId) {
-      throw new BadRequestException('tenantId is required');
-    }
-
-    try {
-      const order = await this.deliveryService.startPrep(id, body.tenantId);
-      return { success: true, order };
-    } catch (error) {
-      throw new BadRequestException(error instanceof Error ? error.message : 'Failed to start preparation');
-    }
+  async startPrep(@Param('id') id: string, @Body() body: { tenantId: string }) {
+    return this.deliveryService.startPrep(id, body.tenantId);
   }
 
-  /**
-   * Mark order as ready
-   */
   @Post(':id/ready')
-  async markReady(
-    @Param('id') id: string,
-    @Body() body: { tenantId: string },
-  ) {
-    if (!body.tenantId) {
-      throw new BadRequestException('tenantId is required');
-    }
-
-    try {
-      const order = await this.deliveryService.markReady(id, body.tenantId);
-      return { success: true, order };
-    } catch (error) {
-      throw new BadRequestException(error instanceof Error ? error.message : 'Failed to mark order as ready');
-    }
+  async markReady(@Param('id') id: string, @Body() body: { tenantId: string }) {
+    return this.deliveryService.markReady(id, body.tenantId);
   }
 
-  /**
-   * Complete order
-   */
   @Post(':id/complete')
-  async completeOrder(
-    @Param('id') id: string,
-    @Body() body: { tenantId: string },
-  ) {
-    if (!body.tenantId) {
-      throw new BadRequestException('tenantId is required');
-    }
-
-    try {
-      const order = await this.deliveryService.completeOrder(id, body.tenantId);
-      return { success: true, order };
-    } catch (error) {
-      throw new BadRequestException(error instanceof Error ? error.message : 'Failed to complete order');
-    }
+  async completeOrder(@Param('id') id: string, @Body() body: { tenantId: string }) {
+    return this.deliveryService.completeOrder(id, body.tenantId);
   }
 
-  /**
-   * Cancel order
-   */
   @Post(':id/cancel')
   async cancelOrder(
     @Param('id') id: string,
     @Body() body: { tenantId: string; reason: string },
   ) {
-    if (!body.tenantId) {
-      throw new BadRequestException('tenantId is required');
-    }
-
-    if (!body.reason) {
-      throw new BadRequestException('reason is required');
-    }
-
-    try {
-      const order = await this.deliveryService.cancelOrder(id, body.tenantId, body.reason);
-      return { success: true, order };
-    } catch (error) {
-      throw new BadRequestException(error instanceof Error ? error.message : 'Failed to cancel order');
-    }
+    return this.deliveryService.cancelOrder(id, body.tenantId, body.reason);
   }
 }

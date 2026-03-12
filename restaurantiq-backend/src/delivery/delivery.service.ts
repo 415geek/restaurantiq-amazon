@@ -1,14 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { UberEatsTokenService } from '../ubereats/ubereats-token.service';
-
-type DeliveryOrderStatus = 'new' | 'accepted' | 'preparing' | 'ready' | 'completed' | 'cancelled';
+import { UberEatsOrderService } from '../ubereats/ubereats-order.service';
+import { DeliveryGateway } from './delivery.gateway';
 
 @Injectable()
 export class DeliveryService {
   constructor(
     private prisma: PrismaService,
-    private uberEatsTokenService: UberEatsTokenService,
+    private uberEatsOrderService: UberEatsOrderService,
+    private deliveryGateway: DeliveryGateway,
   ) {}
 
   /**
@@ -17,31 +17,33 @@ export class DeliveryService {
   async getOrders(filters: {
     tenantId: string;
     platform?: string;
-    status?: DeliveryOrderStatus;
-    from?: string;
-    to?: string;
+    status?: string;
+    from?: Date;
+    to?: Date;
     limit?: number;
     offset?: number;
   }) {
+    const { tenantId, platform, status, from, to, limit = 50, offset = 0 } = filters;
+
     const where: any = {
-      tenantId: filters.tenantId,
+      tenantId,
     };
 
-    if (filters.platform) {
-      where.platform = filters.platform.toUpperCase();
+    if (platform) {
+      where.platform = platform;
     }
 
-    if (filters.status) {
-      where.status = filters.status;
+    if (status) {
+      where.status = status;
     }
 
-    if (filters.from || filters.to) {
+    if (from || to) {
       where.placedAt = {};
-      if (filters.from) {
-        where.placedAt.gte = new Date(filters.from);
+      if (from) {
+        where.placedAt.gte = from;
       }
-      if (filters.to) {
-        where.placedAt.lte = new Date(filters.to);
+      if (to) {
+        where.placedAt.lte = to;
       }
     }
 
@@ -49,30 +51,47 @@ export class DeliveryService {
       this.prisma.order.findMany({
         where,
         orderBy: { placedAt: 'desc' },
-        take: filters.limit || 50,
-        skip: filters.offset || 0,
+        take: limit,
+        skip: offset,
       }),
       this.prisma.order.count({ where }),
     ]);
 
-    return {
-      orders,
-      total,
-      limit: filters.limit || 50,
-      offset: filters.offset || 0,
-    };
+    return { orders, total };
   }
 
   /**
    * Get order by ID
    */
-  async getOrderById(id: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id },
+  async getOrderById(id: string, tenantId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id,
+        tenantId,
+      },
     });
 
     if (!order) {
-      throw new Error('Order not found');
+      throw new NotFoundException(`Order ${id} not found`);
+    }
+
+    return order;
+  }
+
+  /**
+   * Get order by platform order ID
+   */
+  async getOrderByPlatformId(tenantId: string, platform: string, platformOrderId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: {
+        tenantId,
+        platform,
+        platformOrderId,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException(`Order ${platformOrderId} not found`);
     }
 
     return order;
@@ -82,284 +101,281 @@ export class DeliveryService {
    * Accept order
    */
   async acceptOrder(id: string, tenantId: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id },
-    });
+    const order = await this.getOrderById(id, tenantId);
 
-    if (!order) {
-      throw new Error('Order not found');
+    if (order.status !== 'NEW') {
+      throw new BadRequestException(`Order is not in NEW status (current: ${order.status})`);
     }
 
-    if (order.tenantId !== tenantId) {
-      throw new Error('Unauthorized');
-    }
-
-    if (order.status !== 'new') {
-      throw new Error('Order cannot be accepted in current status');
-    }
-
-    // Call platform API to accept order
-    await this.callPlatformAction(order.platform, order.platformOrderId, 'accept');
-
-    // Update order status
-    const updated = await this.prisma.order.update({
+    // Update local status
+    const updatedOrder = await this.prisma.order.update({
       where: { id },
       data: {
-        status: 'accepted',
+        status: 'ACCEPTED',
         acceptedAt: new Date(),
         updatedAt: new Date(),
       },
     });
 
-    return updated;
+    // Call platform API if needed
+    if (order.platform === 'UBEREATS') {
+      try {
+        await this.uberEatsOrderService.acceptOrder(tenantId, order.platformOrderId);
+      } catch (error) {
+        // Rollback local status if platform call fails
+        await this.prisma.order.update({
+          where: { id },
+          data: {
+            status: 'NEW',
+            acceptedAt: null,
+            updatedAt: new Date(),
+          },
+        });
+        throw error;
+      }
+    }
+
+    // Broadcast update
+    await this.deliveryGateway.broadcastOrderEvent(tenantId, 'order:updated', updatedOrder);
+
+    return updatedOrder;
   }
 
   /**
    * Start preparation
    */
   async startPrep(id: string, tenantId: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id },
-    });
+    const order = await this.getOrderById(id, tenantId);
 
-    if (!order) {
-      throw new Error('Order not found');
+    if (order.status !== 'ACCEPTED') {
+      throw new BadRequestException(`Order is not in ACCEPTED status (current: ${order.status})`);
     }
 
-    if (order.tenantId !== tenantId) {
-      throw new Error('Unauthorized');
-    }
-
-    if (order.status !== 'accepted') {
-      throw new Error('Order cannot be started in current status');
-    }
-
-    // Call platform API to start preparation
-    await this.callPlatformAction(order.platform, order.platformOrderId, 'start_prep');
-
-    // Update order status
-    const updated = await this.prisma.order.update({
+    const updatedOrder = await this.prisma.order.update({
       where: { id },
       data: {
-        status: 'preparing',
+        status: 'PREPARING',
         updatedAt: new Date(),
       },
     });
 
-    return updated;
+    // Call platform API if needed
+    if (order.platform === 'UBEREATS') {
+      try {
+        await this.uberEatsOrderService.updateOrderStatusOnPlatform(
+          tenantId,
+          order.platformOrderId,
+          'preparing',
+        );
+      } catch (error) {
+        // Rollback local status if platform call fails
+        await this.prisma.order.update({
+          where: { id },
+          data: {
+            status: 'ACCEPTED',
+            updatedAt: new Date(),
+          },
+        });
+        throw error;
+      }
+    }
+
+    // Broadcast update
+    await this.deliveryGateway.broadcastOrderEvent(tenantId, 'order:updated', updatedOrder);
+
+    return updatedOrder;
   }
 
   /**
    * Mark order as ready
    */
   async markReady(id: string, tenantId: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id },
-    });
+    const order = await this.getOrderById(id, tenantId);
 
-    if (!order) {
-      throw new Error('Order not found');
+    if (order.status !== 'PREPARING') {
+      throw new BadRequestException(`Order is not in PREPARING status (current: ${order.status})`);
     }
 
-    if (order.tenantId !== tenantId) {
-      throw new Error('Unauthorized');
-    }
-
-    if (order.status !== 'preparing') {
-      throw new Error('Order cannot be marked ready in current status');
-    }
-
-    // Call platform API to mark ready
-    await this.callPlatformAction(order.platform, order.platformOrderId, 'ready');
-
-    // Update order status
-    const updated = await this.prisma.order.update({
+    const updatedOrder = await this.prisma.order.update({
       where: { id },
       data: {
-        status: 'ready',
+        status: 'READY',
         readyAt: new Date(),
         updatedAt: new Date(),
       },
     });
 
-    return updated;
+    // Call platform API if needed
+    if (order.platform === 'UBEREATS') {
+      try {
+        await this.uberEatsOrderService.updateOrderStatusOnPlatform(
+          tenantId,
+          order.platformOrderId,
+          'ready_for_pickup',
+        );
+      } catch (error) {
+        // Rollback local status if platform call fails
+        await this.prisma.order.update({
+          where: { id },
+          data: {
+            status: 'PREPARING',
+            readyAt: null,
+            updatedAt: new Date(),
+          },
+        });
+        throw error;
+      }
+    }
+
+    // Broadcast update
+    await this.deliveryGateway.broadcastOrderEvent(tenantId, 'order:updated', updatedOrder);
+
+    return updatedOrder;
   }
 
   /**
    * Complete order
    */
   async completeOrder(id: string, tenantId: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id },
-    });
+    const order = await this.getOrderById(id, tenantId);
 
-    if (!order) {
-      throw new Error('Order not found');
+    if (order.status !== 'READY') {
+      throw new BadRequestException(`Order is not in READY status (current: ${order.status})`);
     }
 
-    if (order.tenantId !== tenantId) {
-      throw new Error('Unauthorized');
-    }
-
-    if (order.status !== 'ready') {
-      throw new Error('Order cannot be completed in current status');
-    }
-
-    // Call platform API to complete order
-    await this.callPlatformAction(order.platform, order.platformOrderId, 'complete');
-
-    // Update order status
-    const updated = await this.prisma.order.update({
+    const updatedOrder = await this.prisma.order.update({
       where: { id },
       data: {
-        status: 'completed',
+        status: 'COMPLETED',
         completedAt: new Date(),
         updatedAt: new Date(),
       },
     });
 
-    return updated;
+    // Broadcast update
+    await this.deliveryGateway.broadcastOrderEvent(tenantId, 'order:updated', updatedOrder);
+
+    return updatedOrder;
   }
 
   /**
    * Cancel order
    */
   async cancelOrder(id: string, tenantId: string, reason: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id },
-    });
+    const order = await this.getOrderById(id, tenantId);
 
-    if (!order) {
-      throw new Error('Order not found');
+    if (order.status === 'COMPLETED' || order.status === 'CANCELLED') {
+      throw new BadRequestException(`Cannot cancel order in ${order.status} status`);
     }
 
-    if (order.tenantId !== tenantId) {
-      throw new Error('Unauthorized');
-    }
-
-    if (order.status === 'completed' || order.status === 'cancelled') {
-      throw new Error('Order cannot be cancelled in current status');
-    }
-
-    // Call platform API to cancel order
-    await this.callPlatformAction(order.platform, order.platformOrderId, 'cancel', { reason });
-
-    // Update order status
-    const updated = await this.prisma.order.update({
+    const updatedOrder = await this.prisma.order.update({
       where: { id },
       data: {
-        status: 'cancelled',
+        status: 'CANCELLED',
         cancelReason: reason,
         cancelledAt: new Date(),
         updatedAt: new Date(),
       },
     });
 
-    return updated;
-  }
-
-  /**
-   * Call platform API for order actions
-   */
-  private async callPlatformAction(
-    platform: string,
-    platformOrderId: string,
-    action: string,
-    data?: any,
-  ): Promise<void> {
-    switch (platform) {
-      case 'UBEREATS':
-        await this.callUberEatsAction(platformOrderId, action, data);
-        break;
-      case 'DOORDASH':
-        // TODO: Implement DoorDash API
-        break;
-      case 'GRUBHUB':
-        // TODO: Implement GrubHub API
-        break;
-      default:
-        throw new Error(`Unsupported platform: ${platform}`);
-    }
-  }
-
-  /**
-   * Call Uber Eats API for order actions
-   */
-  private async callUberEatsAction(
-    platformOrderId: string,
-    action: string,
-    data?: any,
-  ): Promise<void> {
-    // TODO: Get tenantId from context
-    const tenantId = 'default-tenant';
-
-    // Get access token
-    const { token } = await this.uberEatsTokenService.resolveAccessToken(tenantId);
-    if (!token) {
-      throw new Error('Failed to get Uber Eats access token');
-    }
-
-    const apiBaseUrl = this.getUberEatsApiBaseUrl();
-    const storeId = this.getUberEatsStoreId();
-
-    let endpoint = '';
-    let method = 'POST';
-    let body: any = {};
-
-    switch (action) {
-      case 'accept':
-        endpoint = `/v1/eats/stores/${storeId}/orders/${platformOrderId}/accept`;
-        break;
-      case 'start_prep':
-        endpoint = `/v1/eats/stores/${storeId}/orders/${platformOrderId}/accept`;
-        body = { status: 'preparing' };
-        break;
-      case 'ready':
-        endpoint = `/v1/eats/stores/${storeId}/orders/${platformOrderId}/accept`;
-        body = { status: 'ready' };
-        break;
-      case 'complete':
-        endpoint = `/v1/eats/stores/${storeId}/orders/${platformOrderId}/accept`;
-        body = { status: 'completed' };
-        break;
-      case 'cancel':
-        endpoint = `/v1/eats/stores/${storeId}/orders/${platformOrderId}/cancel`;
-        body = { reason: data?.reason || 'Restaurant cancelled' };
-        break;
-      default:
-        throw new Error(`Unknown action: ${action}`);
-    }
-
-    try {
-      const response = await fetch(`${apiBaseUrl}${endpoint}`, {
-        method,
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Uber Eats API error: ${response.status} - ${errorText}`);
+    // Call platform API if needed
+    if (order.platform === 'UBEREATS') {
+      try {
+        await this.uberEatsOrderService.cancelOrder(tenantId, order.platformOrderId, reason);
+      } catch (error) {
+        // Rollback local status if platform call fails
+        await this.prisma.order.update({
+          where: { id },
+          data: {
+            status: order.status,
+            cancelReason: null,
+            cancelledAt: null,
+            updatedAt: new Date(),
+          },
+        });
+        throw error;
       }
-
-      console.log(`[Uber Eats API] ${action} successful for order ${platformOrderId}`);
-    } catch (error) {
-      console.error(`[Uber Eats API] ${action} failed for order ${platformOrderId}:`, error);
-      throw error;
     }
+
+    // Broadcast update
+    await this.deliveryGateway.broadcastOrderEvent(tenantId, 'order:cancelled', updatedOrder);
+
+    return updatedOrder;
   }
 
-  private getUberEatsApiBaseUrl(): string {
-    const env = process.env.UBEREATS_ENVIRONMENT || 'sandbox';
-    return env === 'production'
-      ? 'https://api.uber.com'
-      : 'https://sandbox-api.uber.com';
+  /**
+   * Get order statistics
+   */
+  async getOrderStats(tenantId: string, from?: Date, to?: Date) {
+    const where: any = {
+      tenantId,
+    };
+
+    if (from || to) {
+      where.placedAt = {};
+      if (from) {
+        where.placedAt.gte = from;
+      }
+      if (to) {
+        where.placedAt.lte = to;
+      }
+    }
+
+    const [
+      totalOrders,
+      newOrders,
+      preparingOrders,
+      readyOrders,
+      completedOrders,
+      cancelledOrders,
+      totalRevenue,
+    ] = await Promise.all([
+      this.prisma.order.count({ where }),
+      this.prisma.order.count({ where: { ...where, status: 'NEW' } }),
+      this.prisma.order.count({ where: { ...where, status: 'PREPARING' } }),
+      this.prisma.order.count({ where: { ...where, status: 'READY' } }),
+      this.prisma.order.count({ where: { ...where, status: 'COMPLETED' } }),
+      this.prisma.order.count({ where: { ...where, status: 'CANCELLED' } }),
+      this.prisma.order.aggregate({
+        where: { ...where, status: 'COMPLETED' },
+        _sum: { total: true },
+      }),
+    ]);
+
+    return {
+      totalOrders,
+      newOrders,
+      preparingOrders,
+      readyOrders,
+      completedOrders,
+      cancelledOrders,
+      totalRevenue: totalRevenue._sum.total || 0,
+    };
   }
 
-  private getUberEatsStoreId(): string {
-    return process.env.UBEREATS_STORE_IDS || '';
+  /**
+   * Get orders by status for Kanban board
+   */
+  async getKanbanOrders(tenantId: string) {
+    const [newOrders, preparingOrders, readyOrders] = await Promise.all([
+      this.prisma.order.findMany({
+        where: { tenantId, status: 'NEW' },
+        orderBy: { placedAt: 'asc' },
+      }),
+      this.prisma.order.findMany({
+        where: { tenantId, status: 'PREPARING' },
+        orderBy: { placedAt: 'asc' },
+      }),
+      this.prisma.order.findMany({
+        where: { tenantId, status: 'READY' },
+        orderBy: { placedAt: 'asc' },
+      }),
+    ]);
+
+    return {
+      new: newOrders,
+      preparing: preparingOrders,
+      ready: readyOrders,
+    };
   }
 }

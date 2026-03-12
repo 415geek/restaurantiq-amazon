@@ -1,111 +1,77 @@
-import { Controller, Get, Post, Body, Query, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, BadRequestException } from '@nestjs/common';
 import { UberEatsService } from './ubereats.service';
-import { UberEatsTokenService } from './ubereats-token.service';
+import { UberEatsOrderService } from './ubereats-order.service';
 
 @Controller('ubereats')
 export class UberEatsController {
   constructor(
     private readonly uberEatsService: UberEatsService,
-    private readonly uberEatsTokenService: UberEatsTokenService,
+    private readonly orderService: UberEatsOrderService,
   ) {}
 
-  /**
-   * Get OAuth configuration status
-   */
   @Get('auth/status')
-  async getAuthStatus() {
-    const status = this.uberEatsService.getConfigStatus();
-    return status;
-  }
-
-  /**
-   * Generate OAuth authorization URL
-   */
-  @Get('auth/start')
-  async startAuth(
-    @Query('tenantId') tenantId: string,
-    @Query('storeId') storeId?: string,
-  ) {
+  async getAuthStatus(@Query('tenantId') tenantId: string) {
     if (!tenantId) {
-      return { error: 'tenantId is required' };
+      throw new BadRequestException('tenantId is required');
     }
-
-    const authUrl = this.uberEatsService.generateAuthUrl(tenantId, storeId);
-    return { authUrl };
+    return this.uberEatsService.getAuthStatus(tenantId);
   }
 
-  /**
-   * Handle OAuth callback
-   */
-  @Get('auth/callback')
-  async handleCallback(
-    @Query('code') code: string,
-    @Query('state') state: string,
-    @Query('error') error?: string,
-  ) {
-    if (error) {
-      return {
-        success: false,
-        error: `OAuth error: ${error}`,
-      };
-    }
-
-    if (!code || !state) {
-      return {
-        success: false,
-        error: 'Missing code or state parameter',
-      };
-    }
-
-    const result = await this.uberEatsService.handleCallback(code, state);
-    return result;
+  @Post('auth/url')
+  async getOAuthUrl(@Body() body: { tenantId: string; redirectUri: string }) {
+    return this.uberEatsService.getOAuthUrl(body.tenantId, body.redirectUri);
   }
 
-  /**
-   * Get connection status
-   */
-  @Get('connection/status')
-  async getConnectionStatus(
-    @Query('tenantId') tenantId: string,
-    @Query('storeId') storeId?: string,
-  ) {
-    if (!tenantId) {
-      return { error: 'tenantId is required' };
-    }
-
-    const status = await this.uberEatsService.getConnectionStatus(tenantId, storeId);
-    return status;
+  @Post('auth/callback')
+  async handleCallback(@Body() body: { code: string; state: string; redirectUri: string }) {
+    return this.uberEatsService.exchangeCodeForToken(body.code, body.state, body.redirectUri);
   }
 
-  /**
-   * Disconnect Uber Eats integration
-   */
   @Post('auth/disconnect')
-  async disconnect(
-    @Body() body: { tenantId: string; storeId?: string },
-  ) {
-    if (!body.tenantId) {
-      return { error: 'tenantId is required' };
-    }
-
-    await this.uberEatsService.disconnect(body.tenantId, body.storeId);
-    return { success: true };
+  async disconnect(@Body() body: { tenantId: string }) {
+    return this.uberEatsService.disconnect(body.tenantId);
   }
 
-  /**
-   * Get access token (for testing)
-   */
-  @Get('token')
-  async getToken(@Query('tenantId') tenantId: string) {
+  @Get('orders')
+  async getOrders(@Query('tenantId') tenantId: string, @Query('limit') limit?: string) {
     if (!tenantId) {
-      return { error: 'tenantId is required' };
+      throw new BadRequestException('tenantId is required');
     }
+    return this.orderService.getRecentOrders(tenantId, limit ? parseInt(limit) : 50);
+  }
 
-    const result = await this.uberEatsTokenService.resolveAccessToken(tenantId);
-    return {
-      token: result.token ? `${result.token.substring(0, 20)}...` : null,
-      source: result.source,
-      warning: result.warning,
-    };
+  @Get('orders/status/:status')
+  async getOrdersByStatus(
+    @Param('status') status: string,
+    @Query('tenantId') tenantId: string,
+  ) {
+    if (!tenantId) {
+      throw new BadRequestException('tenantId is required');
+    }
+    return this.orderService.getOrdersByStatus(tenantId, status);
+  }
+
+  @Post('orders/:platformOrderId/accept')
+  async acceptOrder(
+    @Param('platformOrderId') platformOrderId: string,
+    @Body() body: { tenantId: string },
+  ) {
+    return this.orderService.acceptOrder(body.tenantId, platformOrderId);
+  }
+
+  @Post('orders/:platformOrderId/cancel')
+  async cancelOrder(
+    @Param('platformOrderId') platformOrderId: string,
+    @Body() body: { tenantId: string; reason: string },
+  ) {
+    return this.orderService.cancelOrder(body.tenantId, platformOrderId, body.reason);
+  }
+
+  @Post('orders/:platformOrderId/status')
+  async updateOrderStatus(
+    @Param('platformOrderId') platformOrderId: string,
+    @Body() body: { tenantId: string; status: 'preparing' | 'ready_for_pickup' | 'driver_at_pickup' },
+  ) {
+    return this.orderService.updateOrderStatusOnPlatform(body.tenantId, platformOrderId, body.status);
   }
 }

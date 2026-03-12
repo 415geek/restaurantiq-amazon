@@ -1,275 +1,215 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from '../redis/redis.service';
-import { PrismaService } from '../database/prisma.service';
-import * as crypto from 'crypto';
-
-export type UberResolvedTokenSource =
-  | 'oauth_connection'
-  | 'env_bearer_token'
-  | 'client_credentials'
-  | 'none';
-
-export type UberResolvedToken = {
-  token: string;
-  source: UberResolvedTokenSource;
-  warning?: string;
-  setupGuide?: string;
-  errorDetails?: string;
-};
-
-// Global token cache to prevent rate limiting
-let cachedToken: {
-  token: string;
-  expiresAt: number;
-  source: UberResolvedTokenSource;
-} | null = null;
-
-// Lock to prevent concurrent token requests
-let tokenRequestInProgress = false;
 
 @Injectable()
 export class UberEatsTokenService {
+  private tokenCachePrefix = 'ubereats:token:';
+  private stateCachePrefix = 'ubereats:state:';
+  private lockPrefix = 'ubereats:lock:';
+  private defaultTTL = 3600; // 1 hour
+
   constructor(
     private configService: ConfigService,
-    private redis: RedisService,
-    private prisma: PrismaService,
-  ) {}
+    private redisService: RedisService,
+  ) {
+    console.log('[Uber Eats Token Service] Initialized');
+  }
 
-  private sanitizeToken(raw?: string | null): string {
-    if (!raw) return '';
-    const token = raw.trim();
-    if (!token) return '';
-    if (token.toLowerCase() === 'none') return '';
-    if (token.includes('<ACCESS_TOKEN>')) return '';
+  /**
+   * Cache access token in Redis
+   */
+  async cacheToken(tenantId: string, token: string, expiresIn: number): Promise<void> {
+    const key = `${this.tokenCachePrefix}${tenantId}`;
+    const ttl = Math.min(expiresIn - 60, this.defaultTTL); // Subtract 60s buffer
+    
+    await this.redisService.set(key, token, ttl);
+    
+    console.log('[Uber Eats Token Service] Token cached', {
+      tenantId,
+      ttl,
+      tokenPreview: token.substring(0, 20) + '...',
+    });
+  }
+
+  /**
+   * Get cached access token
+   */
+  async getCachedToken(tenantId: string): Promise<string | null> {
+    const key = `${this.tokenCachePrefix}${tenantId}`;
+    const token = await this.redisService.get(key);
+    
+    if (token) {
+      console.log('[Uber Eats Token Service] Token cache hit', { tenantId });
+    }
+    
     return token;
   }
 
-  private resolveTokenEndpoint(): string {
-    if (this.configService.get<string>('UBEREATS_OAUTH_TOKEN_URL')?.trim()) {
-      return this.configService.get<string>('UBEREATS_OAUTH_TOKEN_URL')!.trim();
-    }
-    const env = (this.configService.get<string>('UBEREATS_ENVIRONMENT') || 'sandbox')
-      .toLowerCase()
-      .trim();
-    return env === 'production'
-      ? 'https://auth.uber.com/oauth/v2/token'
-      : 'https://sandbox-login.uber.com/oauth/v2/token';
-  }
-
-  private resolveClientCredentialsScope(): string {
-    return (
-      this.configService.get<string>('UBEREATS_CLIENT_CREDENTIALS_SCOPES') ||
-      this.configService.get<string>('UBEREATS_OAUTH_SCOPES') ||
-      'eats.store.read eats.store.orders.read eats.store.status.write'
-    );
-  }
-
-  private tokenIsFresh(expiresAt?: number): boolean {
-    if (!expiresAt) return true;
-    // Add 5 minute buffer to ensure token doesn't expire mid-request
-    return expiresAt - Date.now() > 5 * 60 * 1000;
+  /**
+   * Clear cached access token
+   */
+  async clearCachedToken(tenantId: string): Promise<void> {
+    const key = `${this.tokenCachePrefix}${tenantId}`;
+    await this.redisService.del(key);
+    
+    console.log('[Uber Eats Token Service] Token cache cleared', { tenantId });
   }
 
   /**
-   * Exchange client credentials for access token
+   * Cache OAuth state for verification
    */
-  private async exchangeClientCredentialsToken(tenantId: string): Promise<UberResolvedToken> {
-    const clientId = this.configService.get<string>('UBEREATS_CLIENT_ID')?.trim();
-    const clientSecret = this.configService.get<string>('UBEREATS_CLIENT_SECRET')?.trim();
-
-    if (!clientId) {
-      return {
-        token: '',
-        source: 'none',
-        warning: 'Uber Eats not configured',
-        setupGuide: 'To enable Uber Eats integration, apply for developer access at https://developer.uber.com/docs/eats and configure credentials in .env.local',
-        errorDetails: 'UBEREATS_CLIENT_ID is missing',
-      };
-    }
-
-    if (!clientSecret) {
-      return {
-        token: '',
-        source: 'none',
-        warning: 'Uber Eats credentials incomplete',
-        setupGuide: 'Configure UBEREATS_CLIENT_SECRET in .env.local',
-        errorDetails: 'UBEREATS_CLIENT_SECRET is missing',
-      };
-    }
-
-    try {
-      const tokenUrl = this.resolveTokenEndpoint();
-      const scope = this.resolveClientCredentialsScope();
-
-      console.log('[Uber Eats Token] Attempting client credentials exchange');
-      console.log('[Uber Eats Token] Token URL:', tokenUrl);
-      console.log('[Uber Eats Token] Scope:', scope);
-      console.log('[Uber Eats Token] Client ID:', clientId.substring(0, 8) + '...');
-
-      const params = new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: clientId,
-        client_secret: clientSecret,
-        scope: scope,
-      });
-
-      console.log('[Uber Eats Token] Request body prepared');
-
-      const tokenRes = await fetch(tokenUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: params.toString(),
-        cache: 'no-store',
-      });
-
-      console.log('[Uber Eats Token] Response status:', tokenRes.status);
-
-      const tokenData = await tokenRes.json().catch(() => ({}));
-      console.log('[Uber Eats Token] Response data:', JSON.stringify(tokenData, null, 2));
-
-      const accessToken = this.sanitizeToken(
-        typeof tokenData.access_token === 'string' ? tokenData.access_token : ''
-      );
-
-      if (!tokenRes.ok || !accessToken) {
-        const details =
-          (tokenData as { error_description?: string; error?: string }).error_description ||
-          (tokenData as { error?: string }).error ||
-          `HTTP ${tokenRes.status}`;
-
-        console.error('[Uber Eats Token] Token exchange failed:', details);
-
-        return {
-          token: '',
-          source: 'none',
-          warning: `Uber token exchange failed (${details})`,
-          setupGuide: 'Check your Uber Eats credentials in .env.local and ensure your app is approved for the required scopes.',
-          errorDetails: details,
-        };
-      }
-
-      const expiresIn =
-        typeof tokenData.expires_in === 'number' && Number.isFinite(tokenData.expires_in)
-          ? tokenData.expires_in
-          : 3600;
-
-      console.log('[Uber Eats Token] Token obtained successfully, expires in:', expiresIn, 'seconds');
-
-      // Update global cache
-      cachedToken = {
-        token: accessToken,
-        expiresAt: Date.now() + expiresIn * 1000,
-        source: 'client_credentials',
-      };
-
-      // Cache in Redis
-      await this.redis.setToken('ubereats', tenantId, accessToken, expiresIn);
-
-      return {
-        token: accessToken,
-        source: 'client_credentials',
-      };
-    } catch (error) {
-      console.error('[Uber Eats Token] Exception during token exchange:', error);
-      return {
-        token: '',
-        source: 'none',
-        warning: error instanceof Error ? error.message : 'token_exchange_unknown_error',
-        setupGuide: 'Ensure your Uber Eats credentials are correctly configured in .env.local',
-        errorDetails: error instanceof Error ? error.stack : String(error),
-      };
-    }
-  }
-
-  /**
-   * Resolve Uber Eats access token with caching
-   */
-  async resolveAccessToken(tenantId: string): Promise<UberResolvedToken> {
-    // Check global cache first to prevent rate limiting
-    if (cachedToken && this.tokenIsFresh(cachedToken.expiresAt)) {
-      console.log('[Uber Eats Token] Using cached token (expires in:', Math.round((cachedToken.expiresAt - Date.now()) / 1000), 'seconds)');
-      return { token: cachedToken.token, source: cachedToken.source };
-    }
-
-    // Check Redis cache
-    const redisToken = await this.redis.getToken('ubereats', tenantId);
-    if (redisToken) {
-      console.log('[Uber Eats Token] Using Redis cached token');
-      return { token: redisToken, source: 'oauth_connection' };
-    }
-
-    // Check database for stored OAuth token
-    const integration = await this.prisma.integration.findUnique({
-      where: {
-        tenantId_platform_platformStoreId: {
-          tenantId,
-          platform: 'UBEREATS',
-          platformStoreId: 'default',
-        },
-      },
+  async cacheState(state: string, tenantId: string): Promise<void> {
+    const key = `${this.stateCachePrefix}${state}`;
+    await this.redisService.set(key, tenantId, 600); // 10 minutes
+    
+    console.log('[Uber Eats Token Service] State cached', {
+      state: state.substring(0, 8) + '...',
+      tenantId,
     });
+  }
 
-    if (integration && integration.accessTokenEnc && integration.tokenExpiresAt) {
-      // TODO: Decrypt token (AES-256)
-      const accessToken = integration.accessTokenEnc; // Will be decrypted
+  /**
+   * Verify and consume OAuth state
+   */
+  async verifyState(state: string): Promise<string | null> {
+    const key = `${this.stateCachePrefix}${state}`;
+    const tenantId = await this.redisService.get(key);
+    
+    if (tenantId) {
+      // Consume the state (delete it)
+      await this.redisService.del(key);
+      console.log('[Uber Eats Token Service] State verified', {
+        state: state.substring(0, 8) + '...',
+        tenantId,
+      });
+    }
+    
+    return tenantId;
+  }
 
-      if (this.tokenIsFresh(integration.tokenExpiresAt.getTime())) {
-        console.log('[Uber Eats Token] Using stored OAuth token from database');
+  /**
+   * Acquire lock for token refresh (prevent concurrent refreshes)
+   */
+  async acquireLock(tenantId: string, ttl: number = 30): Promise<boolean> {
+    const key = `${this.lockPrefix}${tenantId}`;
+    
+    // Try to set the key with NX (only if not exists)
+    const result = await this.redisService.set(key, '1', ttl);
+    
+    if (result === 'OK') {
+      console.log('[Uber Eats Token Service] Lock acquired', { tenantId });
+      return true;
+    }
+    
+    console.log('[Uber Eats Token Service] Lock already held', { tenantId });
+    return false;
+  }
 
-        // Update global cache
-        cachedToken = {
-          token: accessToken,
-          expiresAt: integration.tokenExpiresAt.getTime(),
-          source: 'oauth_connection',
-        };
+  /**
+   * Release lock
+   */
+  async releaseLock(tenantId: string): Promise<void> {
+    const key = `${this.lockPrefix}${tenantId}`;
+    await this.redisService.del(key);
+    
+    console.log('[Uber Eats Token Service] Lock released', { tenantId });
+  }
 
-        return { token: accessToken, source: 'oauth_connection' };
+  /**
+   * Wait for lock to be released (with timeout)
+   */
+  async waitForLock(tenantId: string, timeout: number = 10000): Promise<void> {
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < timeout) {
+      const hasLock = await this.redisService.exists(`${this.lockPrefix}${tenantId}`);
+      
+      if (!hasLock) {
+        console.log('[Uber Eats Token Service] Lock released, proceeding', { tenantId });
+        return;
       }
+      
+      // Wait 100ms before checking again
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    throw new Error('Timeout waiting for token refresh lock');
+  }
+
+  /**
+   * Get token with automatic refresh and lock protection
+   * This prevents multiple concurrent requests from triggering multiple refreshes
+   */
+  async getTokenWithRefresh(
+    tenantId: string,
+    refreshCallback: () => Promise<string>,
+  ): Promise<string> {
+    // Check cache first
+    const cachedToken = await this.getCachedToken(tenantId);
+    if (cachedToken) {
+      return cachedToken;
     }
 
-    // Check environment variable
-    const envToken = this.sanitizeToken(this.configService.get<string>('UBEREATS_BEARER_TOKEN'));
-    if (envToken) {
-      console.log('[Uber Eats Token] Using environment bearer token');
-
-      // Update global cache with long expiry for env tokens
-      cachedToken = {
-        token: envToken,
-        expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
-        source: 'env_bearer_token',
-      };
-
-      return { token: envToken, source: 'env_bearer_token' };
-    }
-
-    // Prevent concurrent token requests
-    if (tokenRequestInProgress) {
-      console.log('[Uber Eats Token] Token request already in progress, waiting...');
-
-      // Wait for the in-progress request (simple polling)
-      let attempts = 0;
-      while (tokenRequestInProgress && attempts < 30) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        attempts++;
+    // Try to acquire lock
+    const lockAcquired = await this.acquireLock(tenantId);
+    
+    if (lockAcquired) {
+      try {
+        // We have the lock, perform the refresh
+        console.log('[Uber Eats Token Service] Performing token refresh', { tenantId });
+        const newToken = await refreshCallback();
+        return newToken;
+      } finally {
+        await this.releaseLock(tenantId);
       }
-
-      // Check if token was cached while we were waiting
-      if (cachedToken && this.tokenIsFresh(cachedToken.expiresAt)) {
-        console.log('[Uber Eats Token] Using token from concurrent request');
-        return { token: cachedToken.token, source: cachedToken.source };
+    } else {
+      // Another request is refreshing, wait for it
+      console.log('[Uber Eats Token Service] Waiting for token refresh', { tenantId });
+      await this.waitForLock(tenantId);
+      
+      // After waiting, check cache again
+      const cachedToken = await this.getCachedToken(tenantId);
+      if (cachedToken) {
+        return cachedToken;
       }
+      
+      // If still no token, something went wrong
+      throw new Error('Failed to obtain token after waiting for refresh');
     }
+  }
 
-    // Request new token
-    console.log('[Uber Eats Token] Attempting client credentials exchange');
-    tokenRequestInProgress = true;
-
-    try {
-      const result = await this.exchangeClientCredentialsToken(tenantId);
-      return result;
-    } finally {
-      tokenRequestInProgress = false;
+  /**
+   * Get token usage statistics
+   */
+  async getTokenStats(tenantId: string): Promise<{
+    cached: boolean;
+    ttl?: number;
+  }> {
+    const key = `${this.tokenCachePrefix}${tenantId}`;
+    const exists = await this.redisService.exists(key);
+    
+    if (!exists) {
+      return { cached: false };
     }
+    
+    // Get TTL
+    const ttl = await this.redisService.client.ttl(key);
+    
+    return {
+      cached: true,
+      ttl: ttl > 0 ? ttl : undefined,
+    };
+  }
+
+  /**
+   * Clear all cached tokens for a tenant
+   */
+  async clearAllTenantData(tenantId: string): Promise<void> {
+    await this.clearCachedToken(tenantId);
+    
+    // Note: We don't clear locks here as they should expire naturally
+    
+    console.log('[Uber Eats Token Service] All tenant data cleared', { tenantId });
   }
 }

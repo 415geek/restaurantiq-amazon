@@ -1,116 +1,149 @@
-import { Controller, Post, Body, Headers, Logger } from '@nestjs/common';
+import { Controller, Post, Body, Headers, HttpCode, HttpStatus, Logger } from '@nestjs/common';
+import { UberEatsService } from './ubereats.service';
 import { UberEatsOrderService } from './ubereats-order.service';
-import { ConfigService } from '@nestjs/config';
-import * as crypto from 'crypto';
+import { PrismaService } from '../database/prisma.service';
 
 @Controller('webhooks/ubereats')
 export class UberEatsWebhookController {
   private readonly logger = new Logger(UberEatsWebhookController.name);
 
   constructor(
-    private readonly uberEatsOrderService: UberEatsOrderService,
-    private readonly configService: ConfigService,
-  ) {}
+    private uberEatsService: UberEatsService,
+    private orderService: UberEatsOrderService,
+    private prisma: PrismaService,
+  ) {
+    this.logger.log('[Uber Eats Webhook Controller] Initialized');
+  }
 
-  /**
-   * Handle Uber Eats webhook
-   */
   @Post()
+  @HttpCode(HttpStatus.OK)
   async handleWebhook(
     @Body() payload: any,
     @Headers('x-uber-signature') signature: string,
     @Headers('x-uber-event-type') eventType: string,
-    @Headers('x-uber-store-id') storeId: string,
   ) {
-    this.logger.log(`[Uber Eats Webhook] Received event: ${eventType}, store: ${storeId}`);
+    this.logger.log('[Uber Eats Webhook] Received webhook', {
+      eventType,
+      signature: signature?.substring(0, 20) + '...',
+    });
 
-    // Verify HMAC signature
-    const isValid = this.verifySignature(payload, signature);
-    if (!isValid) {
-      this.logger.error('[Uber Eats Webhook] Invalid signature');
-      return {
-        received: false,
-        error: 'Invalid signature',
-      };
-    }
-
-    this.logger.log('[Uber Eats Webhook] Signature verified');
-
-    // Parse order from payload
-    const order = this.uberEatsOrderService.parseWebhookOrder(payload, storeId);
-    if (!order) {
-      this.logger.warn('[Uber Eats Webhook] Could not parse order from payload');
-      return {
-        received: true,
-        warning: 'Could not parse order',
-      };
-    }
-
-    this.logger.log(`[Uber Eats Webhook] Parsed order: ${order.id}, status: ${order.status}`);
-
-    // TODO: Get tenantId from storeId mapping
-    // For now, use a default tenant
-    const tenantId = 'default-tenant';
-
-    // Save order to database
     try {
-      await this.uberEatsOrderService.saveOrder(tenantId, order);
-      this.logger.log(`[Uber Eats Webhook] Order saved successfully: ${order.id}`);
-    } catch (error) {
-      this.logger.error(`[Uber Eats Webhook] Failed to save order: ${error}`);
-      return {
-        received: false,
-        error: 'Failed to save order',
-      };
-    }
+      // Verify signature
+      const payloadString = JSON.stringify(payload);
+      const isValid = this.uberEatsService.verifyWebhookSignature(payloadString, signature);
 
-    return {
-      received: true,
-      orderId: order.id,
-      status: order.status,
-    };
+      if (!isValid) {
+        this.logger.error('[Uber Eats Webhook] Invalid signature');
+        return { success: false, error: 'Invalid signature' };
+      }
+
+      // Log webhook event
+      await this.prisma.webhookEvent.create({
+        data: {
+          platform: 'UBEREATS',
+          topic: eventType,
+          eventType: eventType,
+          storeId: payload.store_id,
+          payload: payload,
+          processed: false,
+          receivedAt: new Date(),
+        },
+      });
+
+      // Determine tenant ID from store ID
+      const integration = await this.prisma.integration.findFirst({
+        where: {
+          platform: 'UBEREATS',
+          platformStoreId: payload.store_id,
+        },
+      });
+
+      if (!integration) {
+        this.logger.warn('[Uber Eats Webhook] No integration found for store', {
+          storeId: payload.store_id,
+        });
+        return { success: false, error: 'Store not found' };
+      }
+
+      const tenantId = integration.tenantId;
+      const restaurantId = integration.restaurantId || '';
+
+      // Handle different event types
+      switch (eventType) {
+        case 'orders.created':
+        case 'orders.new':
+          await this.orderService.handleNewOrder(tenantId, restaurantId, payload);
+          break;
+
+        case 'orders.status.updated':
+          await this.orderService.handleOrderStatusUpdate(
+            tenantId,
+            payload.order_id,
+            payload.status,
+            payload,
+          );
+          break;
+
+        case 'orders.cancelled':
+        case 'orders.canceled':
+          await this.orderService.handleOrderCancellation(
+            tenantId,
+            payload.order_id,
+            payload,
+          );
+          break;
+
+        case 'stores.status.updated':
+          // Handle store status update
+          this.logger.log('[Uber Eats Webhook] Store status updated', {
+            storeId: payload.store_id,
+            status: payload.status,
+          });
+          break;
+
+        default:
+          this.logger.warn('[Uber Eats Webhook] Unknown event type', { eventType });
+      }
+
+      // Mark webhook event as processed
+      await this.prisma.webhookEvent.updateMany({
+        where: {
+          platform: 'UBEREATS',
+          storeId: payload.store_id,
+          receivedAt: new Date(),
+        },
+        data: {
+          processed: true,
+          processedAt: new Date(),
+        },
+      });
+
+      this.logger.log('[Uber Eats Webhook] Processed successfully', { eventType });
+
+      return { success: true };
+    } catch (error: any) {
+      this.logger.error('[Uber Eats Webhook] Processing failed', {
+        error: error.message,
+        stack: error.stack,
+      });
+
+      return { success: false, error: error.message };
+    }
   }
 
   /**
-   * Verify HMAC signature
+   * Webhook verification endpoint (for Uber Eats to verify webhook URL)
    */
-  private verifySignature(payload: any, signature: string): boolean {
-    if (!signature) {
-      this.logger.warn('[Uber Eats Webhook] No signature provided');
-      return false;
-    }
+  @Post('verify')
+  @HttpCode(HttpStatus.OK)
+  async verifyWebhook(@Body() body: any) {
+    this.logger.log('[Uber Eats Webhook] Verification request', {
+      verification_code: body.verification_code,
+    });
 
-    const webhookSecret = this.configService.get<string>('UBEREATS_WEBHOOK_SIGNING_KEY');
-    if (!webhookSecret) {
-      this.logger.warn('[Uber Eats Webhook] No webhook secret configured');
-      return false;
-    }
-
-    try {
-      // Convert payload to string
-      const payloadString = JSON.stringify(payload);
-
-      // Compute HMAC
-      const hmac = crypto.createHmac('sha256', webhookSecret);
-      hmac.update(payloadString);
-      const computedSignature = hmac.digest('hex');
-
-      // Compare signatures (timing-safe comparison)
-      const isValid = crypto.timingSafeEqual(
-        Buffer.from(signature),
-        Buffer.from(computedSignature),
-      );
-
-      if (!isValid) {
-        this.logger.error(`[Uber Eats Webhook] Signature mismatch`);
-        this.logger.error(`[Uber Eats Webhook] Expected: ${computedSignature}`);
-        this.logger.error(`[Uber Eats Webhook] Received: ${signature}`);
-      }
-
-      return isValid;
-    } catch (error) {
-      this.logger.error(`[Uber Eats Webhook] Signature verification error: ${error}`);
-      return false;
-    }
+    // Return the verification code to confirm webhook URL
+    return {
+      verification_code: body.verification_code,
+    };
   }
 }
