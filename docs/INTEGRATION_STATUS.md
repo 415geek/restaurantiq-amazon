@@ -55,7 +55,19 @@
 - **Usage**: Restaurant reputation monitoring, review analysis
 - **API Key**: ✅ Configured in `.env.local`
 
-### 6. Clerk Authentication
+### 6. Nova Act (Browser Simulation)
+- **Status**: ⚠️ Infrastructure Ready (Awaiting Credentials)
+- **File**: `lib/server/adapters/nova-act-market-scan.ts`
+- **Features**:
+  - Live browser simulation for market scanning
+  - Competitor menu and pricing data collection
+  - Campaign tracking across delivery platforms
+  - Fallback to mock data when not configured
+- **Usage**: Competitive intelligence, market analysis
+- **Credentials**: ⚠️ Not configured (using fallback)
+- **Setup Guide**: `docs/NOVA_ACT_SETUP.md`
+
+### 7. Clerk Authentication
 - **Status**: ✅ Fully Integrated & Working
 - **Features**:
   - User sign-up and sign-in
@@ -65,7 +77,7 @@
 - **Usage**: Authentication throughout the app
 - **Credentials**: ✅ Configured in `.env.local`
 
-### 7. Uber Eats API
+### 8. Uber Eats API
 - **Status**: ✅ Fully Configured & Ready
 - **Files**:
   - `lib/server/ubereats-oauth-service.ts` - OAuth service
@@ -131,6 +143,21 @@ Business Search → Yelp Fusion API → Business Data
                             Sentiment Analysis → Insights
 ```
 
+### Nova Act Market Scan Flow
+```
+Market Scan Request → Nova Act Adapter → Nova Act API
+                                    ↓
+                            Browser Simulation
+                                    ↓
+                            Scrape Delivery Platforms
+                                    ↓
+                            Extract Menu & Pricing Data
+                                    ↓
+                            Return to RestaurantIQ
+                                    ↓
+                            Analysis & Recommendations
+```
+
 ## 🔧 Configuration
 
 ### Environment Variables Required
@@ -147,6 +174,11 @@ AWS_REGION=us-east-1
 
 # Reviews ✅ Configured
 YELP_API_KEY=F7YnYDZFd7i-M_XhtM4SXSAny41CNMXt3O8LpxM5xA52gyVS6xPL_DnXDs2ecaJk2mSHzUA4cqyIQEjnV6WkSjXPo36g5GFOvZhTOlxSQ2OBlE0b1Nz4BmMPQtdjZnYx
+
+# Market Intelligence ⚠️ Not Configured
+NOVA_ACT_ENABLED=false
+NOVA_ACT_ENDPOINT=
+NOVA_ACT_API_KEY=
 
 # Authentication ✅ Configured
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
@@ -171,6 +203,9 @@ UBEREATS_ENVIRONMENT=production
 - ✅ Uber Eats OAuth infrastructure
 - ✅ All dashboard features
 
+### Using Fallback ⚠️
+- ⚠️ Nova Act market scanning (using mock data)
+
 ### Ready for OAuth ⚠️
 - ⚠️ Uber Eats integration (credentials configured, awaiting OAuth flow completion)
 
@@ -188,6 +223,28 @@ To complete Uber Eats integration:
    - Verify connection status
 
 **Detailed Guide**: See `docs/UBEREATS_SETUP_GUIDE.md`
+
+## 📝 Nova Act Setup
+
+To enable real-time market scanning:
+
+1. ⚠️ **Obtain Nova Act Credentials**:
+   - Contact Nova Act for API access
+   - Get API endpoint and API key
+
+2. ⚠️ **Configure Environment Variables**:
+   ```bash
+   NOVA_ACT_ENABLED=true
+   NOVA_ACT_ENDPOINT=https://your-nova-act-endpoint.com/api/v1/scan
+   NOVA_ACT_API_KEY=your_nova_act_api_key_here
+   ```
+
+3. ⚠️ **Restart Application**:
+   ```bash
+   npm run dev
+   ```
+
+**Detailed Guide**: See `docs/NOVA_ACT_SETUP.md`
 
 ## 📊 API Usage Monitoring
 
@@ -222,6 +279,12 @@ To complete Uber Eats integration:
 - **Current Usage**: Business search, review retrieval
 - **Status**: ✅ Active
 
+### Nova Act
+- **Pricing**: Contact Nova Act for pricing
+- **Monitor**: Nova Act Dashboard
+- **Current Usage**: Not configured (using fallback)
+- **Status**: ⚠️ Infrastructure ready, awaiting credentials
+
 ### Uber Eats API
 - **Pricing**: Contact Uber for pricing
 - **Monitor**: Uber Developer Dashboard
@@ -238,11 +301,13 @@ To complete Uber Eats integration:
 6. ✅ Improved error messages don't expose sensitive data
 7. ✅ AWS Nova API key is base64 encoded
 8. ✅ Yelp API key is server-side only
+9. ✅ Nova Act credentials are server-side only
 
 ## 📚 Documentation
 
 - **Setup Guide**: `docs/API_INTEGRATION_SETUP.md`
 - **Uber Eats Guide**: `docs/UBEREATS_SETUP_GUIDE.md`
+- **Nova Act Guide**: `docs/NOVA_ACT_SETUP.md`
 - **Environment Variables**: `.env.example`
 - **Uber Eats Setup**: `docs/UBEREATS_INTEGRATION_SETUP_ZH.md`
 
@@ -255,11 +320,12 @@ With current integrations, users can:
 3. ✅ **Get AI-powered recommendations** from OpenAI
 4. ✅ **Use AWS Nova models** for advanced AI operations
 5. ✅ **Monitor Yelp reviews** with sentiment analysis
-6. ✅ **Authenticate securely** with Clerk
-7. ⚠️ **Connect Uber Eats** for order management (credentials configured, ready for OAuth)
-8. ⚠️ **Automate menu synchronization** across platforms (pending OAuth)
-9. ⚠️ **Receive real-time order notifications** (pending OAuth)
-10. ⚠️ **Analyze delivery performance** metrics (pending OAuth)
+6. ⚠️ **Scan competitor menus** (using fallback data)
+7. ✅ **Authenticate securely** with Clerk
+8. ⚠️ **Connect Uber Eats** for order management (credentials configured, ready for OAuth)
+9. ⚠️ **Automate menu synchronization** across platforms (pending OAuth)
+10. ⚠️ **Receive real-time order notifications** (pending OAuth)
+11. ⚠️ **Analyze delivery performance** metrics (pending OAuth)
 
 ## 🎯 Success Criteria
 
@@ -268,16 +334,23 @@ With current integrations, users can:
 - [x] OpenAI API integrated and working
 - [x] AWS Nova / Bedrock integrated and working
 - [x] Yelp Fusion API integrated and working
+- [x] Nova Act infrastructure ready
 - [x] Clerk authentication integrated and working
 - [x] Uber Eats OAuth infrastructure ready
 - [x] Uber Eats credentials configured
 - [x] Improved error messages with setup guidance
+- [ ] Nova Act credentials configured
 - [ ] Uber Eats OAuth flow completed
 - [ ] Real order data displayed in dashboard
 
 ## 🐛 Known Issues
 
-None at this time. All integrations are functioning correctly.
+### Nova Act Fallback Warning
+- **Status**: Expected behavior
+- **Message**: "Nova Act live browser simulation is not configured. Showing fallback market scan."
+- **Cause**: Nova Act credentials not yet obtained
+- **Impact**: Market scans use mock data instead of real competitor data
+- **Solution**: Follow setup guide in `docs/NOVA_ACT_SETUP.md`
 
 ## 📞 Support
 
@@ -287,12 +360,16 @@ For integration issues:
 - OpenAI: https://help.openai.com/
 - AWS Bedrock: https://docs.aws.amazon.com/bedrock/
 - Yelp Fusion: https://www.yelp.com/developers/documentation/v3
+- Nova Act: Contact Nova Act support
 - Uber Eats: https://developer.uber.com/support
 - Clerk: https://clerk.com/support
 
 ## 🔄 Recent Updates
 
 ### Latest Changes
+- ✅ Added Nova Act configuration structure
+- ✅ Created comprehensive Nova Act setup guide
+- ✅ Updated integration status with Nova Act information
 - ✅ Added Yelp Fusion API integration
 - ✅ Configured Yelp API key for business search and reviews
 - ✅ Added AWS Nova / Bedrock integration
@@ -308,6 +385,7 @@ For integration issues:
 ### New Features
 - AWS Nova AI models for advanced analysis
 - Yelp review monitoring with sentiment analysis
+- Nova Act browser simulation for market intelligence
 - Configurable AI model routing (OpenAI, AWS Nova, Claude)
 - Usage tracking for AI API calls
 - Improved error handling and user guidance
@@ -321,5 +399,6 @@ All major integrations are now configured and working:
 - ✅ Reviews (Yelp Fusion)
 - ✅ Authentication (Clerk)
 - ✅ Delivery (Uber Eats - ready for OAuth)
+- ⚠️ Market Intelligence (Nova Act - infrastructure ready, awaiting credentials)
 
 The app is fully functional with real API integrations!
