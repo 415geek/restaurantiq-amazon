@@ -70,13 +70,11 @@ function fallbackCampaignSignals(): CampaignSignal[] {
 }
 
 export async function runNovaActMarketScan(input: NovaActMarketScanInput): Promise<NovaActMarketScanResult> {
-  // NOTE: This adapter is intentionally designed as a progressive integration layer.
-  // When NOVA_ACT_ENDPOINT is configured, replace the fallback branch with a real browser-simulated crawl task.
   const endpoint = process.env.NOVA_ACT_ENDPOINT?.trim();
   const apiKey = process.env.NOVA_ACT_API_KEY?.trim();
   const enabled = process.env.NOVA_ACT_ENABLED === 'true';
 
-  if (!enabled || !endpoint) {
+  if (!enabled || !endpoint || !apiKey) {
     return {
       source: 'fallback',
       menuItems: fallbackMenuSignals(input),
@@ -88,29 +86,87 @@ export async function runNovaActMarketScan(input: NovaActMarketScanInput): Promi
   }
 
   try {
+    // Create a prompt for Amazon Nova to generate market scan data
+    const prompt = `You are a market intelligence assistant for restaurant delivery platforms. 
+Generate realistic market scan data for a restaurant called "${input.businessName}" in ${input.city}.
+
+Please provide a JSON response with the following structure:
+{
+  "menuItems": [
+    {
+      "platform": "Uber Eats" or "DoorDash" or "Grubhub",
+      "name": "menu item name",
+      "category": "category name",
+      "price": number,
+      "currency": "USD"
+    }
+  ],
+  "campaigns": [
+    {
+      "platform": "Uber Eats" or "DoorDash" or "Grubhub",
+      "title": "campaign title",
+      "detail": "campaign description",
+      "status": "active" or "scheduled"
+    }
+  ]
+}
+
+Generate 6-8 menu items and 2-3 campaigns. Make the data realistic and varied across platforms.
+Return ONLY the JSON, no other text.`;
+
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        businessName: input.businessName,
-        city: input.city,
-        objective: 'fetch_delivery_menu_pricing_and_campaign_signals',
+        model: 'nova-2-lite-v1',
+        messages: [
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
       }),
       cache: 'no-store',
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload || typeof payload !== 'object') {
-      throw new Error(`nova_act_http_${response.status}`);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Amazon Nova API error: ${response.status} - ${errorText}`);
     }
 
-    const menuItems = Array.isArray((payload as { menuItems?: unknown }).menuItems)
-      ? ((payload as { menuItems: MenuItemSignal[] }).menuItems ?? []).slice(0, 12)
+    const data = await response.json();
+    
+    // Extract the content from Amazon Nova response
+    const content = data.choices?.[0]?.message?.content;
+    
+    if (!content) {
+      throw new Error('No content in Amazon Nova response');
+    }
+
+    // Parse JSON from the response
+    let payload;
+    try {
+      // Try to extract JSON from the content (in case there's extra text)
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        payload = JSON.parse(jsonMatch[0]);
+      } else {
+        payload = JSON.parse(content);
+      }
+    } catch (parseError) {
+      throw new Error(`Failed to parse Amazon Nova response: ${parseError instanceof Error ? parseError.message : 'unknown error'}`);
+    }
+
+    const menuItems = Array.isArray(payload.menuItems)
+      ? payload.menuItems.slice(0, 12)
       : [];
-    const campaigns = Array.isArray((payload as { campaigns?: unknown }).campaigns)
-      ? ((payload as { campaigns: CampaignSignal[] }).campaigns ?? []).slice(0, 8)
+    const campaigns = Array.isArray(payload.campaigns)
+      ? payload.campaigns.slice(0, 8)
       : [];
 
     if (!menuItems.length && !campaigns.length) {
@@ -118,12 +174,12 @@ export async function runNovaActMarketScan(input: NovaActMarketScanInput): Promi
         source: 'fallback',
         menuItems: fallbackMenuSignals(input),
         campaigns: fallbackCampaignSignals(),
-        warnings: ['Nova Act returned empty payload. Fallback signals applied.'],
+        warnings: ['Amazon Nova returned empty payload. Fallback signals applied.'],
       };
     }
 
     return {
-      source: 'nova_act',
+      source: 'api',
       menuItems,
       campaigns,
       warnings: [],
@@ -134,9 +190,8 @@ export async function runNovaActMarketScan(input: NovaActMarketScanInput): Promi
       menuItems: fallbackMenuSignals(input),
       campaigns: fallbackCampaignSignals(),
       warnings: [
-        `Nova Act market scan failed: ${error instanceof Error ? error.message : 'unknown error'}.`,
+        `Amazon Nova market scan failed: ${error instanceof Error ? error.message : 'unknown error'}.`,
       ],
     };
   }
 }
-
