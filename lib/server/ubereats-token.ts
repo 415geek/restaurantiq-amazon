@@ -15,6 +15,7 @@ export type UberResolvedToken = {
   source: UberResolvedTokenSource;
   warning?: string;
   setupGuide?: string;
+  errorDetails?: string;
 };
 
 function sanitizeToken(raw?: string | null) {
@@ -65,6 +66,7 @@ async function exchangeClientCredentialsToken(userKey: string): Promise<UberReso
       source: 'none',
       warning: 'Uber Eats not configured',
       setupGuide: 'To enable Uber Eats integration, apply for developer access at https://developer.uber.com/docs/eats and configure credentials in .env.local',
+      errorDetails: 'UBEREATS_CLIENT_ID is missing',
     };
   }
 
@@ -74,35 +76,56 @@ async function exchangeClientCredentialsToken(userKey: string): Promise<UberReso
       source: 'none',
       warning: 'Uber Eats credentials incomplete',
       setupGuide: 'Configure either UBEREATS_CLIENT_SECRET or UBEREATS_ASYMMETRIC_KEY_ID + private key in .env.local',
+      errorDetails: 'Neither UBEREATS_CLIENT_SECRET nor asymmetric key configuration found',
     };
   }
 
   try {
     const tokenUrl = resolveTokenEndpoint();
+    const scope = resolveClientCredentialsScope();
+    
+    console.log('[Uber Eats Token] Attempting client credentials exchange');
+    console.log('[Uber Eats Token] Token URL:', tokenUrl);
+    console.log('[Uber Eats Token] Scope:', scope);
+    console.log('[Uber Eats Token] Client ID:', clientId.substring(0, 8) + '...');
+    
     const body = await buildUberTokenRequestBody({
       grantType: 'client_credentials',
-      scope: resolveClientCredentialsScope(),
+      scope: scope,
     });
+    
+    console.log('[Uber Eats Token] Request body prepared');
+    
     const tokenRes = await fetch(tokenUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body,
       cache: 'no-store',
     });
+    
+    console.log('[Uber Eats Token] Response status:', tokenRes.status);
+    
     const tokenData = await tokenRes.json().catch(() => ({}));
+    console.log('[Uber Eats Token] Response data:', JSON.stringify(tokenData, null, 2));
+    
     const accessToken = sanitizeToken(
       typeof tokenData.access_token === 'string' ? tokenData.access_token : ''
     );
+    
     if (!tokenRes.ok || !accessToken) {
       const details =
         (tokenData as { error_description?: string; error?: string }).error_description ||
         (tokenData as { error?: string }).error ||
         `HTTP ${tokenRes.status}`;
+      
+      console.error('[Uber Eats Token] Token exchange failed:', details);
+      
       return {
         token: '',
         source: 'none',
         warning: `Uber token exchange failed (${details})`,
-        setupGuide: 'Check your Uber Eats credentials in .env.local and ensure your app is approved for the required scopes',
+        setupGuide: 'Check your Uber Eats credentials in .env.local and ensure your app is approved for the required scopes. If using production, ensure your app is approved for production use.',
+        errorDetails: details,
       };
     }
 
@@ -110,6 +133,9 @@ async function exchangeClientCredentialsToken(userKey: string): Promise<UberReso
       typeof tokenData.expires_in === 'number' && Number.isFinite(tokenData.expires_in)
         ? tokenData.expires_in
         : 3600;
+    
+    console.log('[Uber Eats Token] Token obtained successfully, expires in:', expiresIn, 'seconds');
+    
     upsertUberEatsConnectionState(userKey, {
       mode: 'server_token',
       accessToken,
@@ -118,16 +144,19 @@ async function exchangeClientCredentialsToken(userKey: string): Promise<UberReso
       stores: getUberEatsConnectionState(userKey)?.stores || [],
       asymmetricKeyId: process.env.UBEREATS_ASYMMETRIC_KEY_ID,
     });
+    
     return {
       token: accessToken,
       source: 'client_credentials',
     };
   } catch (error) {
+    console.error('[Uber Eats Token] Exception during token exchange:', error);
     return {
       token: '',
       source: 'none',
       warning: error instanceof Error ? error.message : 'token_exchange_unknown_error',
-      setupGuide: 'Ensure your Uber Eats credentials are correctly configured in .env.local',
+      setupGuide: 'Ensure your Uber Eats credentials are correctly configured in .env.local and your app is approved for production use',
+      errorDetails: error instanceof Error ? error.stack : String(error),
     };
   }
 }
@@ -136,13 +165,16 @@ export async function resolveUberEatsAccessToken(userKey: string): Promise<UberR
   const connection = getUberEatsConnectionState(userKey);
   const oauthToken = sanitizeToken(connection?.accessToken);
   if (oauthToken && tokenIsFresh(connection?.accessTokenExpiresAt)) {
+    console.log('[Uber Eats Token] Using existing OAuth token');
     return { token: oauthToken, source: 'oauth_connection' };
   }
 
   const envToken = sanitizeToken(process.env.UBEREATS_BEARER_TOKEN);
   if (envToken) {
+    console.log('[Uber Eats Token] Using environment bearer token');
     return { token: envToken, source: 'env_bearer_token' };
   }
 
+  console.log('[Uber Eats Token] Attempting client credentials exchange');
   return exchangeClientCredentialsToken(userKey);
 }
