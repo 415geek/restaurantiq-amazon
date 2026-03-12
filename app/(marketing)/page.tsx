@@ -12,7 +12,6 @@ type Language = 'zh' | 'en';
 
 type DemoRequestForm = {
   name: string;
-  restaurantName: string;
   email: string;
 };
 
@@ -120,7 +119,7 @@ const contentByLang = {
       subtitle:
         '不只是分析报表，而是直接给出建议并安全执行。Restaurant IQ 是面向北美餐饮经营者的智能运营 Agent 平台，适用于堂食、外卖与多门店场景。',
       ctaPrimary: 'Start Free Trial',
-      ctaSecondary: '预约演示',
+      ctaSecondary: 'Amazon Nova AI Hackathon Demo',
       tags: ['AI Agent', '可回滚自动执行', '7/24 客服'],
     },
     socialProof: [
@@ -147,7 +146,7 @@ const contentByLang = {
       items: ['多源数据统一整合监控', 'AI 发现趋势并主动推送建议', '一键授权，Agent 自动执行改价/活动'],
     },
     safety: {
-      title: '我们把“安全可控”做成了核心交互',
+      title: '我们把"安全可控"做成了核心交互',
       subtitle: '不盲目自动化。每一步高风险操作，都在你的掌控之中。',
       workflow: [
         { step: 1, title: '运营概况', description: '统一查看营收、订单、评分、配送占比与融合分析摘要。' },
@@ -174,23 +173,22 @@ const contentByLang = {
       button: 'Start Free Trial',
     },
     modal: {
-      title: '预约演示',
-      subtitle: '请留下您的联系方式，我们的顾问将为您展示产品。',
+      title: 'Amazon Nova AI Hackathon Demo',
+      subtitle: 'Enter your name and email to access the complete demo system and experience all features.',
       placeholders: {
-        name: '您的姓名',
-        restaurantName: '餐厅名称',
-        email: '邮箱地址',
+        name: 'Your name',
+        email: 'Email address',
       },
-      submit: '提交预约',
-      submitting: '提交中...',
+      submit: 'Enter Demo',
+      submitting: 'Entering...',
       validation: {
-        required: '必填',
-        email: '邮箱格式错误',
+        required: 'Required',
+        email: 'Invalid email format',
       },
       toast: {
-        loading: '提交中...',
-        success: '已收到您的预约请求，我们将尽快联系您！',
-        error: '提交失败，请重试。',
+        loading: 'Entering demo...',
+        success: 'Welcome to Amazon Nova AI Hackathon Demo!',
+        error: 'Failed to enter. Please try again.',
       },
     },
     footer: {
@@ -210,7 +208,7 @@ const contentByLang = {
       subtitle:
         'More than analytics dashboards, Restaurant IQ turns signals into recommendations and safe execution. Built for restaurant operators across North America, from independent stores to multi-location teams.',
       ctaPrimary: 'Start Free Trial',
-      ctaSecondary: 'Book Demo',
+      ctaSecondary: 'Amazon Nova AI Hackathon Demo',
       tags: ['AI Agent', 'Rollback-enabled Automation', '24/7 Support'],
     },
     socialProof: [
@@ -268,7 +266,6 @@ const contentByLang = {
       subtitle: 'Leave your contact information and our consultant will walk you through the product.',
       placeholders: {
         name: 'Your name',
-        restaurantName: 'Restaurant name',
         email: 'Email address',
       },
       submit: 'Submit Request',
@@ -310,13 +307,14 @@ const Button = ({ children, className = '', variant = 'primary', ...props }: any
 function BookDemoModal({
   setIsOpen,
   copy,
+  onSubmit,
 }: {
   setIsOpen: (isOpen: boolean) => void;
   copy: any;
+  onSubmit: (data: DemoRequestForm) => void;
 }) {
   const demoRequestSchema = z.object({
     name: z.string().min(2, copy.validation.required),
-    restaurantName: z.string().min(2, copy.validation.required),
     email: z.string().email(copy.validation.email),
   });
 
@@ -328,13 +326,8 @@ function BookDemoModal({
     resolver: zodResolver(demoRequestSchema),
   });
 
-  const onSubmit = async () => {
-    toast.promise(new Promise((resolve) => setTimeout(resolve, 1500)), {
-      loading: copy.toast.loading,
-      success: copy.toast.success,
-      error: copy.toast.error,
-    });
-    setTimeout(() => setIsOpen(false), 2000);
+  const onFormSubmit = async (data: DemoRequestForm) => {
+    await onSubmit(data);
   };
 
   return (
@@ -350,7 +343,7 @@ function BookDemoModal({
       >
         <h3 className="text-2xl font-bold mb-2">{copy.title}</h3>
         <p className="text-zinc-400 mb-6 text-sm">{copy.subtitle}</p>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-4">
           <div>
             <input
               {...register('name')}
@@ -358,16 +351,6 @@ function BookDemoModal({
               className="w-full bg-zinc-900 border border-zinc-800 focus:border-[#F26A36] rounded-xl px-4 py-3 text-white outline-none"
             />
             {errors.name && <p className="text-red-500 text-xs mt-1 ml-1">{errors.name.message}</p>}
-          </div>
-          <div>
-            <input
-              {...register('restaurantName')}
-              placeholder={copy.placeholders.restaurantName}
-              className="w-full bg-zinc-900 border border-zinc-800 focus:border-[#F26A36] rounded-xl px-4 py-3 text-white outline-none"
-            />
-            {errors.restaurantName && (
-              <p className="text-red-500 text-xs mt-1 ml-1">{errors.restaurantName.message}</p>
-            )}
           </div>
           <div>
             <input
@@ -422,7 +405,14 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen bg-[#0A0A0A] text-white selection:bg-[#F26A36] selection:text-white">
-      {isDemoModalOpen && <BookDemoModal key={language} setIsOpen={setIsDemoModalOpen} copy={copy.modal} />}
+      {isDemoModalOpen && <BookDemoModal key={language} setIsOpen={setIsDemoModalOpen} copy={copy.modal} onSubmit={async (data) => {
+        toast.promise(new Promise((resolve) => setTimeout(resolve, 1500)), {
+          loading: copy.toast.loading,
+          success: copy.toast.success,
+          error: copy.toast.error,
+        });
+        setTimeout(() => setIsDemoModalOpen(false), 2000);
+      }} />}
       {lightboxImage && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
