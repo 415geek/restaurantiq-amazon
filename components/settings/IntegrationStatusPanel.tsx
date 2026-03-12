@@ -11,6 +11,7 @@ import { useDashboardLanguage } from '@/components/providers/DashboardLanguagePr
 const docs: Record<string, string> = {
   clerk: 'Set NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY in .env.local, then restart app.',
   openai: 'Set OPENAI_API_KEY (server-only). Analysis API will use live provider when mock mode is disabled.',
+  awsNova: 'Set AWS_NOVA_API_KEY and AWS_REGION in .env.local. AWS Nova provides AI models via Amazon Bedrock for analysis and operations. Get API key from AWS IAM console with Bedrock permissions.',
   ubereats: 'Uber Eats integration requires developer credentials. Apply at https://developer.uber.com/docs/eats and configure UBEREATS_CLIENT_ID and UBEREATS_CLIENT_SECRET in .env.local. After approval, click "Authorize" to complete OAuth flow and access real order data.',
   doordash: 'DoorDash OAuth/API integration is pending. Use Connect to create a connected-channel placeholder and complete production API onboarding later.',
   grubhub: 'Grubhub OAuth/API integration is pending. Use Connect to create a connected-channel placeholder and complete production API onboarding later.',
@@ -50,6 +51,7 @@ export function IntegrationStatusPanel({
     ? {
         clerk: '在 .env.local 配置 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY 与 CLERK_SECRET_KEY，然后重启应用。',
         openai: '配置 OPENAI_API_KEY（仅服务端）。关闭 mock 模式后分析接口会优先尝试实时调用。',
+        awsNova: '在 .env.local 中配置 AWS_NOVA_API_KEY 和 AWS_REGION。AWS Nova 通过 Amazon Bedrock 提供 AI 模型用于分析和运营。从 AWS IAM 控制台获取具有 Bedrock 权限的 API 密钥。',
         ubereats: 'Uber Eats 集成需要开发者凭证。请访问 https://developer.uber.com/docs/eats 申请开发者权限，然后在 .env.local 中配置 UBEREATS_CLIENT_ID 和 UBEREATS_CLIENT_SECRET。获得批准后，点击"授权接入"完成 OAuth 流程，即可访问实时订单数据。',
         doordash: 'DoorDash OAuth/API 还未完成正式对接。当前可先点击连接，建立平台连接占位并在后续切换到正式授权流程。',
         grubhub: 'Grubhub OAuth/API 还未完成正式对接。当前可先点击连接，建立平台连接占位并在后续切换到正式授权流程。',

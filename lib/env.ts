@@ -14,6 +14,7 @@ export const appEnv = {
 export const integrationEnvStatus = {
   clerk: Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY),
   openai: Boolean(process.env.OPENAI_API_KEY),
+  awsNova: Boolean(process.env.AWS_NOVA_API_KEY),
   openweather: Boolean(process.env.OPENWEATHER_API_KEY),
   ubereats: Boolean(
     (process.env.UBEREATS_CLIENT_ID && process.env.UBEREATS_CLIENT_SECRET)
