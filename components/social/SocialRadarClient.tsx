@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { ContentTranslator } from '@/components/ui/ContentTranslator';
 import { socialLatestCommentsMock, socialMentionsMock, socialPlatformMetricsMock } from '@/lib/mock-data';
 import type { SocialCommentItem, SocialMentionPost, SocialPlatformMetric } from '@/lib/types';
 import { useToast } from '@/hooks/useToast';
@@ -255,7 +256,13 @@ export function SocialRadarClient() {
                     </div>
                     <div className="text-xs text-zinc-500">{new Date(comment.created_at).toLocaleString()}</div>
                   </div>
-                  <p className="text-sm text-zinc-300">{comment.text}</p>
+                  <div className="mt-2">
+                    <ContentTranslator
+                      originalContent={comment.text}
+                      contentType="comment"
+                      size="sm"
+                    />
+                  </div>
                   <div className="flex items-center gap-2 text-xs text-zinc-500">
                     <Badge>{comment.sentiment}</Badge>
                     <span>{comment.likes ?? 0} likes</span>
@@ -302,7 +309,13 @@ export function SocialRadarClient() {
                   <ExternalLink className="h-4 w-4 text-zinc-500" />
                 </div>
                 <p className="text-sm font-medium text-zinc-100">{post.title}</p>
-                <p className="mt-1 text-xs text-zinc-400">{post.excerpt}</p>
+                <div className="mt-1">
+                  <ContentTranslator
+                    originalContent={post.excerpt}
+                    contentType="comment"
+                    size="sm"
+                  />
+                </div>
                 <div className="mt-3 flex flex-wrap gap-3 text-xs text-zinc-500">
                   <span>❤️ {formatCount(post.likes)}</span>
                   <span>🔖 {formatCount(post.saves)}</span>

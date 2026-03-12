@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Tabs } from '@/components/ui/Tabs';
+import { ContentTranslator } from '@/components/ui/ContentTranslator';
 import { useRecommendations } from '@/hooks/useRecommendations';
 import { useExecution } from '@/hooks/useExecution';
 import { useToast } from '@/hooks/useToast';
@@ -470,7 +471,7 @@ export function AnalysisClient() {
             ) : (
               <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 text-sm text-zinc-300">
                 {lang === 'zh'
-                  ? `已上传 ${uploadedDocuments.length} 份文档，默认已折叠。点击“展开已上传”查看详情。`
+                  ? `已上传 ${uploadedDocuments.length} 份文档，默认已折叠。点击"展开已上传"查看详情。`
                   : `${uploadedDocuments.length} uploaded document(s), collapsed by default. Click "Expand uploaded" to inspect details.`}
               </div>
             )
@@ -634,12 +635,22 @@ function BusinessIntelPanel({
               {lang === 'zh' ? '分析结论摘要' : 'Executive summary'}
             </p>
             <div className="mt-3 space-y-2 text-sm text-zinc-300">
-              <p>{intel.personas.mckinsey.summary}</p>
+              <ContentTranslator
+                originalContent={intel.personas.mckinsey.summary}
+                contentType="analysis"
+                size="sm"
+              />
               {topRecommendation ? (
                 <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 text-xs text-zinc-300">
                   <p className="text-zinc-400">{lang === 'zh' ? '首要建议' : 'Top recommendation'}</p>
                   <p className="mt-1 font-medium text-zinc-100">{topRecommendation.title}</p>
-                  <p className="mt-1 text-zinc-400">{topRecommendation.expected_outcome}</p>
+                  <div className="mt-1">
+                    <ContentTranslator
+                      originalContent={topRecommendation.expected_outcome}
+                      contentType="analysis"
+                      size="sm"
+                    />
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -662,133 +673,87 @@ function BusinessIntelPanel({
                 <div key={`${theme.theme}-${index}`} className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
                   <p className="text-xs text-zinc-400">{theme.priority.toUpperCase()}</p>
                   <p className="mt-1 text-sm font-medium text-zinc-100">{lang === 'zh' ? theme.theme_zh : theme.theme}</p>
-                  <p className="mt-1 text-xs text-zinc-400">{lang === 'zh' ? theme.evidence_zh : theme.evidence}</p>
+                  <div className="mt-1">
+                    <ContentTranslator
+                      originalContent={lang === 'zh' ? theme.evidence_zh : theme.evidence}
+                      contentType="analysis"
+                      size="sm"
+                    />
+                  </div>
                 </div>
               ))}
             </div>
           </div>
         ) : null}
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          {intel.competition ? (
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-4">
-              <p className="text-sm font-medium text-zinc-200">
-                {lang === 'zh' ? '精准竞对分析' : 'Precise competitor analysis'}
-              </p>
-              <div className="mt-3 space-y-2">
-                {(intel.competition.direct.length ? intel.competition.direct : []).map((item) => (
-                  <div key={item.name} className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
-                    <p className="text-sm font-medium text-zinc-100">{item.name}</p>
-                    <p className="mt-1 text-xs text-zinc-400">
-                      {lang === 'zh' ? item.rationale_zh : item.rationale}
-                    </p>
-                    <p className="mt-1 text-xs text-zinc-500">
-                      {(item.rating ?? '-')}{' '}
-                      {lang === 'zh' ? '分' : 'rating'} · {(item.reviewCount ?? '-')} {lang === 'zh' ? '条评论' : 'reviews'}
-                    </p>
-                  </div>
-                ))}
-              </div>
-              {intel.competition.scenario.length ? (
-                <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-900/30 p-3">
-                  <p className="text-xs text-zinc-400">{lang === 'zh' ? '场景竞对' : 'Scenario competitors'}</p>
-                  <p className="mt-1 text-xs text-zinc-300">
-                    {intel.competition.scenario
-                      .map((item) => (lang === 'zh' ? `${item.category}（${item.rationale_zh}）` : `${item.category} (${item.rationale})`))
-                      .join(' · ')}
-                  </p>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {(intel.consumerProfile || intel.platformIntel) ? (
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-4">
-              <p className="text-sm font-medium text-zinc-200">
-                {lang === 'zh' ? '社区消费画像与平台情报' : 'Consumer profile & platform intelligence'}
-              </p>
-              {intel.consumerProfile ? (
-                <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 text-xs text-zinc-300">
-                  <p className="font-medium text-zinc-100">
-                    {lang === 'zh' ? '消费画像' : 'Consumer profile'} · {intel.consumerProfile.incomeBand}
-                  </p>
-                  <p className="mt-1">
-                    {lang === 'zh' ? intel.consumerProfile.spendingPattern_zh : intel.consumerProfile.spendingPattern}
-                  </p>
-                </div>
-              ) : null}
-              {intel.platformIntel ? (
-                <div className="mt-3 space-y-2">
-                  <p className="text-xs text-zinc-400">
-                    {lang === 'zh' ? '平台菜单/活动情报来源' : 'Platform menu/campaign source'}: {intel.platformIntel.source}
-                  </p>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {intel.platformIntel.menuItems.slice(0, 6).map((item, index) => (
-                      <div key={`${item.platform}-${item.name}-${index}`} className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-2 text-xs text-zinc-300">
-                        <p className="font-medium text-zinc-100">{item.name}</p>
-                        <p>{item.platform} · {item.price ? `$${item.price}` : '-'}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-
-        {intel.comparison ? (
+        {intel.competition ? (
           <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-4">
             <p className="text-sm font-medium text-zinc-200">
-              {lang === 'zh' ? '门店经营对比（老板门店 vs 目标商家）' : 'Store comparison (your store vs target)'}
+              {lang === 'zh' ? '精准竞对分析' : 'Precise competitor analysis'}
             </p>
-            <div className="mt-3 grid gap-3 md:grid-cols-4">
-              <MetricCard
-                label={lang === 'zh' ? '你方营收' : 'Your revenue'}
-                value={formatCurrency(intel.comparison.baseline.revenue)}
-                subtitle={lang === 'zh' ? '来自上传运营数据' : 'From uploaded ops data'}
-              />
-              <MetricCard
-                label={lang === 'zh' ? '你方客单价' : 'Your AOV'}
-                value={intel.comparison.baseline.aov ? `$${intel.comparison.baseline.aov}` : '-'}
-                subtitle={lang === 'zh' ? '经营基线' : 'Operating baseline'}
-              />
-              <MetricCard
-                label={lang === 'zh' ? '目标 Google 评分' : 'Target Google rating'}
-                value={intel.comparison.target.googleRating?.toFixed(1) ?? '-'}
-                subtitle={lang === 'zh' ? '口碑基准' : 'Review benchmark'}
-              />
-              <MetricCard
-                label={lang === 'zh' ? '目标 Yelp 评分' : 'Target Yelp rating'}
-                value={intel.comparison.target.yelpRating?.toFixed(1) ?? '-'}
-                subtitle={lang === 'zh' ? '口碑基准' : 'Review benchmark'}
-              />
-            </div>
             <div className="mt-3 space-y-2">
-              {intel.comparison.gaps.map((gap, index) => (
-                <div key={`${gap.dimension}-${index}`} className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
-                  <p className="text-xs text-zinc-400">{gap.priority}</p>
-                  <p className="mt-1 text-sm font-medium text-zinc-100">
-                    {lang === 'zh' ? gap.dimension_zh : gap.dimension}
+              {(intel.competition.direct.length ? intel.competition.direct : []).map((item) => (
+                <div key={item.name} className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+                  <p className="text-sm font-medium text-zinc-100">{item.name}</p>
+                  <div className="mt-1">
+                    <ContentTranslator
+                      originalContent={lang === 'zh' ? item.rationale_zh : item.rationale}
+                      contentType="analysis"
+                      size="sm"
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    {(item.rating ?? '-')}{' '}
+                    {lang === 'zh' ? '分' : 'rating'} · {(item.reviewCount ?? '-')} {lang === 'zh' ? '条评论' : 'reviews'}
                   </p>
-                  <p className="mt-1 text-xs text-zinc-400">
-                    {lang === 'zh' ? '当前' : 'Current'}: {gap.current} · {lang === 'zh' ? '标杆' : 'Benchmark'}: {gap.benchmark}
-                  </p>
-                  <p className="mt-1 text-xs text-zinc-300">{lang === 'zh' ? gap.action_zh : gap.action}</p>
                 </div>
               ))}
             </div>
+            {intel.competition.scenario.length ? (
+              <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-900/30 p-3">
+                <p className="text-xs text-zinc-400">{lang === 'zh' ? '场景竞对' : 'Scenario competitors'}</p>
+                <p className="mt-1 text-xs text-zinc-300">
+                  {intel.competition.scenario
+                    .map((item) => (lang === 'zh' ? `${item.category}（${item.rationale_zh}）` : `${item.category} (${item.rationale})`))
+                    .join(' · ')}
+                </p>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <ReviewList title="Google Reviews" icon={<MessageSquare className="h-4 w-4" />} reviews={intel.reviews.google} />
-          <ReviewList title="Yelp Reviews" icon={<MessageSquare className="h-4 w-4" />} reviews={intel.reviews.yelp} />
-        </div>
-
-        <div className="grid gap-4 lg:grid-cols-2">
-          <PhotoGrid title="Google Photos" photos={intel.photos.google} />
-          <PhotoGrid title="Yelp Photos" photos={intel.photos.yelp} />
-        </div>
+        {(intel.consumerProfile || intel.platformIntel) ? (
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-4">
+            <p className="text-sm font-medium text-zinc-200">
+              {lang === 'zh' ? '社区消费画像与平台情报' : 'Consumer profile & platform intelligence'}
+            </p>
+            {intel.consumerProfile ? (
+              <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 text-xs text-zinc-300">
+                <p className="font-medium text-zinc-100">
+                  {lang === 'zh' ? '消费画像' : 'Consumer profile'} · {intel.consumerProfile.incomeBand}
+                </p>
+                <p className="mt-1">
+                  {lang === 'zh' ? intel.consumerProfile.spendingPattern_zh : intel.consumerProfile.spendingPattern}
+                </p>
+              </div>
+            ) : null}
+            {intel.platformIntel ? (
+              <div className="mt-3 space-y-2">
+                <p className="text-xs text-zinc-400">
+                  {lang === 'zh' ? '平台菜单/活动情报来源' : 'Platform menu/campaign source'}: {intel.platformIntel.source}
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {intel.platformIntel.menuItems.slice(0, 6).map((item, index) => (
+                    <div key={`${item.platform}-${item.name}-${index}`} className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-2 text-xs text-zinc-300">
+                      <p className="font-medium text-zinc-100">{item.name}</p>
+                      <p>{item.platform} · {item.price ? `$${item.price}` : '-'}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -808,10 +773,12 @@ function ReviewList({
   title,
   icon,
   reviews,
+  lang,
 }: {
   title: string;
   icon: React.ReactNode;
   reviews: Array<{ author: string; rating?: number; text: string; time?: string }>;
+  lang: 'zh' | 'en';
 }) {
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-4">
@@ -833,7 +800,13 @@ function ReviewList({
                 ) : null}
                 {review.time ? <span>{new Date(review.time).toLocaleDateString()}</span> : null}
               </div>
-              <p className="mt-2 text-sm text-zinc-300">{review.text}</p>
+              <div className="mt-2">
+                <ContentTranslator
+                  originalContent={review.text}
+                  contentType="review"
+                  size="sm"
+                />
+              </div>
             </div>
           ))
         ) : (
@@ -936,7 +909,7 @@ function OpsDataAnalysisPanel({
         {!agentAParsed || !agentBAnalyzed || !validatedPlan ? (
           <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-950/40 p-4 text-sm text-zinc-400">
             {lang === 'zh'
-              ? '点击“运营数据分析”后，将生成解析清洗报告、经营洞察和可执行动作。'
+              ? '点击"运营数据分析"后，将生成解析清洗报告、经营洞察和可执行动作。'
               : 'Click "Run Ops Data Analysis" to generate parsing/cleaning report, insights, and executable actions.'}
           </div>
         ) : (
