@@ -18,6 +18,16 @@ export type UberResolvedToken = {
   errorDetails?: string;
 };
 
+// Global token cache to prevent rate limiting
+let cachedToken: {
+  token: string;
+  expiresAt: number;
+  source: UberResolvedTokenSource;
+} | null = null;
+
+// Lock to prevent concurrent token requests
+let tokenRequestInProgress = false;
+
 function sanitizeToken(raw?: string | null) {
   if (!raw) return '';
   const token = raw.trim();
@@ -49,7 +59,8 @@ function resolveClientCredentialsScope() {
 
 function tokenIsFresh(expiresAt?: number) {
   if (!expiresAt) return true;
-  return expiresAt - Date.now() > 60 * 1000;
+  // Add 5 minute buffer to ensure token doesn't expire mid-request
+  return expiresAt - Date.now() > 5 * 60 * 1000;
 }
 
 async function exchangeClientCredentialsToken(userKey: string): Promise<UberResolvedToken> {
@@ -136,6 +147,7 @@ async function exchangeClientCredentialsToken(userKey: string): Promise<UberReso
     
     console.log('[Uber Eats Token] Token obtained successfully, expires in:', expiresIn, 'seconds');
     
+    // Update connection state
     upsertUberEatsConnectionState(userKey, {
       mode: 'server_token',
       accessToken,
@@ -144,6 +156,13 @@ async function exchangeClientCredentialsToken(userKey: string): Promise<UberReso
       stores: getUberEatsConnectionState(userKey)?.stores || [],
       asymmetricKeyId: process.env.UBEREATS_ASYMMETRIC_KEY_ID,
     });
+    
+    // Update global cache
+    cachedToken = {
+      token: accessToken,
+      expiresAt: Date.now() + expiresIn * 1000,
+      source: 'client_credentials',
+    };
     
     return {
       token: accessToken,
@@ -162,19 +181,69 @@ async function exchangeClientCredentialsToken(userKey: string): Promise<UberReso
 }
 
 export async function resolveUberEatsAccessToken(userKey: string): Promise<UberResolvedToken> {
+  // Check global cache first to prevent rate limiting
+  if (cachedToken && tokenIsFresh(cachedToken.expiresAt)) {
+    console.log('[Uber Eats Token] Using cached token (expires in:', Math.round((cachedToken.expiresAt - Date.now()) / 1000), 'seconds)');
+    return { token: cachedToken.token, source: cachedToken.source };
+  }
+
+  // Check connection state
   const connection = getUberEatsConnectionState(userKey);
   const oauthToken = sanitizeToken(connection?.accessToken);
   if (oauthToken && tokenIsFresh(connection?.accessTokenExpiresAt)) {
-    console.log('[Uber Eats Token] Using existing OAuth token');
+    console.log('[Uber Eats Token] Using existing OAuth token from connection state');
+    
+    // Update global cache
+    cachedToken = {
+      token: oauthToken,
+      expiresAt: connection.accessTokenExpiresAt || Date.now() + 3600 * 1000,
+      source: 'oauth_connection',
+    };
+    
     return { token: oauthToken, source: 'oauth_connection' };
   }
 
+  // Check environment variable
   const envToken = sanitizeToken(process.env.UBEREATS_BEARER_TOKEN);
   if (envToken) {
     console.log('[Uber Eats Token] Using environment bearer token');
+    
+    // Update global cache with a long expiry for env tokens
+    cachedToken = {
+      token: envToken,
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+      source: 'env_bearer_token',
+    };
+    
     return { token: envToken, source: 'env_bearer_token' };
   }
 
+  // Prevent concurrent token requests
+  if (tokenRequestInProgress) {
+    console.log('[Uber Eats Token] Token request already in progress, waiting...');
+    
+    // Wait for the in-progress request (simple polling)
+    let attempts = 0;
+    while (tokenRequestInProgress && attempts < 30) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      attempts++;
+    }
+    
+    // Check if token was cached while we were waiting
+    if (cachedToken && tokenIsFresh(cachedToken.expiresAt)) {
+      console.log('[Uber Eats Token] Using token from concurrent request');
+      return { token: cachedToken.token, source: cachedToken.source };
+    }
+  }
+
+  // Request new token
   console.log('[Uber Eats Token] Attempting client credentials exchange');
-  return exchangeClientCredentialsToken(userKey);
+  tokenRequestInProgress = true;
+  
+  try {
+    const result = await exchangeClientCredentialsToken(userKey);
+    return result;
+  } finally {
+    tokenRequestInProgress = false;
+  }
 }
