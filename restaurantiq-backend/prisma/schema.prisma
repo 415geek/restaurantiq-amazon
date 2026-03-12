@@ -1,0 +1,270 @@
+// Prisma Schema for RestaurantIQ V2.1
+// PostgreSQL Database
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============= User & Tenant =============
+
+model Tenant {
+  id              String   @id @default(cuid())
+  clerkOrgId      String?  @unique
+  name            String
+  plan            Plan     @default(STARTER)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  users           User[]
+  restaurants     Restaurant[]
+  integrations    Integration[]
+  orders          Order[]
+  agentRuns       AgentRun[]
+  executions      Execution[]
+}
+
+model User {
+  id              String   @id @default(cuid())
+  clerkUserId     String   @unique
+  email           String
+  name            String?
+  role            UserRole @default(OWNER)
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+enum Plan {
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+enum UserRole {
+  OWNER
+  MANAGER
+  STAFF
+}
+
+// ============= Restaurant =============
+
+model Restaurant {
+  id              String   @id @default(cuid())
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  name            String
+  address         String?
+  cuisineType     String?  @default("chinese")
+  timezone        String   @default("America/Los_Angeles")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  integrations    Integration[]
+  orders          Order[]
+  menuItems       MenuItem[]
+}
+
+// ============= Platform Integration =============
+
+model Integration {
+  id              String              @id @default(cuid())
+  tenantId        String
+  tenant          Tenant              @relation(fields: [tenantId], references: [id])
+  restaurantId    String?
+  restaurant      Restaurant?         @relation(fields: [restaurantId], references: [id])
+  platform        DeliveryPlatform
+  status          IntegrationStatus   @default(DISCONNECTED)
+  // OAuth tokens (AES-256 encrypted)
+  accessTokenEnc  String?
+  refreshTokenEnc String?
+  tokenExpiresAt  DateTime?
+  // Platform store ID
+  platformStoreId String?
+  platformStoreName String?
+  // Metadata
+  metadata        Json?               @default("{}")
+  lastSyncAt      DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@unique([tenantId, platform, platformStoreId])
+}
+
+enum DeliveryPlatform {
+  UBEREATS
+  DOORDASH
+  GRUBHUB
+  HUNGRYPANDA
+  FANTUAN
+}
+
+enum IntegrationStatus {
+  DISCONNECTED
+  PENDING
+  CONNECTED
+  ERROR
+}
+
+// ============= Order =============
+
+model Order {
+  id                String            @id @default(cuid())
+  tenantId          String
+  tenant            Tenant            @relation(fields: [tenantId], references: [id])
+  restaurantId      String?
+  restaurant        Restaurant?       @relation(fields: [restaurantId], references: [id])
+  platform          DeliveryPlatform
+  platformOrderId   String
+  displayOrderId    String?
+  status            OrderStatus       @default(NEW)
+  customerName      String            @default("Unknown")
+  items             Json
+  subtotal          Decimal           @db.Decimal(10, 2)
+  tax               Decimal?          @db.Decimal(10, 2)
+  deliveryFee       Decimal?          @db.Decimal(10, 2)
+  tip               Decimal?          @db.Decimal(10, 2)
+  total             Decimal           @db.Decimal(10, 2)
+  notes             String?
+  etaMins           Int               @default(0)
+  placedAt          DateTime
+  acceptedAt        DateTime?
+  readyAt           DateTime?
+  completedAt       DateTime?
+  cancelledAt       DateTime?
+  cancelReason      String?
+  rawPayload        Json?
+  source            OrderSource       @default(WEBHOOK)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@unique([platform, platformOrderId])
+  @@index([tenantId, status])
+  @@index([tenantId, placedAt])
+}
+
+enum OrderStatus {
+  NEW
+  ACCEPTED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+enum OrderSource {
+  WEBHOOK
+  API_POLL
+  MANUAL
+}
+
+// ============= Menu =============
+
+model MenuItem {
+  id              String           @id @default(cuid())
+  restaurantId    String
+  restaurant      Restaurant       @relation(fields: [restaurantId], references: [id])
+  name            String
+  nameZh          String?
+  category        String?
+  basePrice       Decimal          @db.Decimal(10, 2)
+  available       Boolean          @default(true)
+  platformPrices  Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+// ============= Webhook Event Log =============
+
+model WebhookEvent {
+  id              String           @id @default(cuid())
+  platform        DeliveryPlatform
+  topic           String?
+  eventType       String?
+  storeId         String?
+  payload         Json
+  processed       Boolean          @default(false)
+  processedAt     DateTime?
+  error           String?
+  receivedAt      DateTime         @default(now())
+
+  @@index([platform, receivedAt])
+}
+
+// ============= Agent Run Record =============
+
+model AgentRun {
+  id              String           @id @default(cuid())
+  tenantId        String
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  pipelineId      String?
+  agentId         String
+  status          AgentRunStatus   @default(RUNNING)
+  input           Json?
+  output          Json?
+  model           String?
+  tokensIn        Int?
+  tokensOut       Int?
+  costUsd         Decimal?         @db.Decimal(10, 6)
+  durationMs      Int?
+  error           String?
+  startedAt       DateTime         @default(now())
+  completedAt     DateTime?
+
+  @@index([tenantId, startedAt])
+}
+
+enum AgentRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  PARTIAL
+}
+
+// ============= Execution Record =============
+
+model Execution {
+  id              String              @id @default(cuid())
+  tenantId        String
+  tenant          Tenant              @relation(fields: [tenantId], references: [id])
+  type            ExecutionType
+  status          ExecutionStatus     @default(PENDING)
+  description     String
+  descriptionZh   String?
+  platform        DeliveryPlatform?
+  targetIds       Json?
+  changes         Json
+  snapshotBefore  Json?
+  impactScore     Decimal?            @db.Decimal(3, 2)
+  approvedBy      String?
+  executedAt      DateTime?
+  rollbackBefore  DateTime?
+  rolledBackAt    DateTime?
+  error           String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([tenantId, status])
+}
+
+enum ExecutionType {
+  PRICE_ADJUSTMENT
+  PROMOTION
+  MENU_UPDATE
+  SOCIAL_POST
+  REVIEW_REPLY
+  INVENTORY_ORDER
+}
+
+enum ExecutionStatus {
+  PENDING
+  APPROVED
+  EXECUTING
+  COMPLETED
+  ROLLED_BACK
+  FAILED
+  REJECTED
+}
