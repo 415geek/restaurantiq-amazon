@@ -1,3 +1,5 @@
+import { getWeatherByCity } from './weather-openweather';
+
 export type MacroSnapshot = {
   source: 'mock' | 'live' | 'fallback';
   city: string;
@@ -34,41 +36,25 @@ export async function getMacroSignalsSnapshot(city = 'San Francisco'): Promise<M
     ],
   };
 
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  if (!apiKey) return fallback;
+  const googleApiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const openWeatherApiKey = process.env.OPENWEATHER_API_KEY;
+
+  if (!googleApiKey || !openWeatherApiKey) {
+    return {
+      ...fallback,
+      source: 'fallback',
+      warning: 'GOOGLE_MAPS_API_KEY and OPENWEATHER_API_KEY required for live data',
+    };
+  }
 
   try {
-    const geocodeUrl = new URL('https://maps.googleapis.com/maps/api/geocode/json');
-    geocodeUrl.searchParams.set('address', city);
-    geocodeUrl.searchParams.set('key', apiKey);
-    const geocodeRes = await fetch(geocodeUrl, { cache: 'no-store' });
-    if (!geocodeRes.ok) throw new Error(`Google Geocoding failed (${geocodeRes.status})`);
-    const geocodeData = await geocodeRes.json();
-    if (geocodeData.status !== 'OK' || !geocodeData.results?.length) {
-      throw new Error(`Google Geocoding status: ${geocodeData.status || 'UNKNOWN'}`);
-    }
+    // Get weather data using OpenWeather API
+    const weatherData = await getWeatherByCity(city, googleApiKey, openWeatherApiKey);
 
-    const top = geocodeData.results[0];
-    const { lat, lng } = top.geometry.location as { lat: number; lng: number };
-
-    const weatherUrl = new URL('https://api.open-meteo.com/v1/forecast');
-    weatherUrl.searchParams.set('latitude', String(lat));
-    weatherUrl.searchParams.set('longitude', String(lng));
-    weatherUrl.searchParams.set('current', 'temperature_2m,precipitation_probability,rain');
-    weatherUrl.searchParams.set('timezone', 'auto');
-    const weatherRes = await fetch(weatherUrl, { cache: 'no-store' });
-    if (!weatherRes.ok) throw new Error(`Open-Meteo failed (${weatherRes.status})`);
-    const weatherData = await weatherRes.json();
-
-    const current = weatherData.current ?? {};
-    const tempC = Number(current.temperature_2m ?? 12);
-    const precipProb = Number(current.precipitation_probability ?? 20);
-    const rain = Number(current.rain ?? 0);
-    const tempF = Math.round(tempC * 9 / 5 + 32);
-
+    // Get nearby places using Google Places
     const placesUrl = new URL('https://maps.googleapis.com/maps/api/place/textsearch/json');
     placesUrl.searchParams.set('query', `${city} restaurants`);
-    placesUrl.searchParams.set('key', apiKey);
+    placesUrl.searchParams.set('key', googleApiKey);
     const placesRes = await fetch(placesUrl, { cache: 'no-store' });
     if (!placesRes.ok) throw new Error(`Google Places failed (${placesRes.status})`);
     const placesData = await placesRes.json();
@@ -82,17 +68,15 @@ export async function getMacroSignalsSnapshot(city = 'San Francisco'): Promise<M
       })
     );
 
-    const weatherAlert =
-      precipProb >= 70 || rain > 0.2 ? 'Rain / precipitation risk elevated' : 'No major weather disruption detected';
-    const demandImpactSignal = precipProb >= 60 ? 'delivery_up' : 'normal';
+    const demandImpactSignal = weatherData.precipitation_probability >= 60 ? 'delivery_up' : 'normal';
     const footTrafficSignal = nearbyPoints.length >= 3 ? 'restaurant_cluster_detected' : 'limited_density';
 
     return {
       source: 'live',
       city,
-      weather_alert: weatherAlert,
-      temperature_f: tempF,
-      precipitation_probability: Math.round(precipProb),
+      weather_alert: weatherData.weather_alert,
+      temperature_f: weatherData.temperature_f,
+      precipitation_probability: weatherData.precipitation_probability,
       demand_impact_signal: demandImpactSignal,
       traffic_level: 'unknown',
       foot_traffic_signal: footTrafficSignal,
@@ -100,7 +84,7 @@ export async function getMacroSignalsSnapshot(city = 'San Francisco'): Promise<M
       factors: [
         {
           domain: 'weather',
-          signal: weatherAlert.toLowerCase(),
+          signal: weatherData.weather_alert.toLowerCase(),
           impactWindow: 'today',
         },
         {

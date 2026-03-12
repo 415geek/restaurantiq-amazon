@@ -12,8 +12,8 @@ export async function POST(req: Request) {
   return NextResponse.json({
     provider:
       snapshot.source === 'live'
-        ? 'google-geocode + open-meteo + google-places'
-        : process.env.GOOGLE_MAPS_API_KEY
+        ? 'google-geocode + openweather + google-places'
+        : process.env.GOOGLE_MAPS_API_KEY && process.env.OPENWEATHER_API_KEY
           ? 'configured-server-provider'
           : 'mock',
     city: snapshot.city,
