@@ -196,7 +196,7 @@ export async function resolveUberEatsAccessToken(userKey: string): Promise<UberR
     // Update global cache
     cachedToken = {
       token: oauthToken,
-      expiresAt: connection.accessTokenExpiresAt || Date.now() + 3600 * 1000,
+      expiresAt: connection?.accessTokenExpiresAt || Date.now() + 3600 * 1000,
       source: 'oauth_connection',
     };
     

@@ -407,9 +407,9 @@ export default function HomePage() {
     <main className="min-h-screen bg-[#0A0A0A] text-white selection:bg-[#F26A36] selection:text-white">
       {isDemoModalOpen && <BookDemoModal key={language} setIsOpen={setIsDemoModalOpen} copy={copy.modal} onSubmit={async (data) => {
         toast.promise(new Promise((resolve) => setTimeout(resolve, 1500)), {
-          loading: copy.toast.loading,
-          success: copy.toast.success,
-          error: copy.toast.error,
+          loading: copy.modal.toast.loading,
+          success: copy.modal.toast.success,
+          error: copy.modal.toast.error,
         });
         setTimeout(() => setIsDemoModalOpen(false), 2000);
       }} />}

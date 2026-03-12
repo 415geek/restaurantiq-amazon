@@ -11,6 +11,7 @@ interface Order {
   total: number;
   placedAt: string;
   etaMins: number;
+  notes?: string;
 }
 
 interface UseOrderStreamOptions {
@@ -50,7 +51,7 @@ export function useOrderStream(options: UseOrderStreamOptions) {
       setConnected(false);
     });
 
-    socketInstance.on('connect_error', (err) => {
+    socketInstance.on('connect_error', (err: Error) => {
       console.error('[useOrderStream] Connection error:', err);
       setError(err.message);
       setConnected(false);
@@ -139,3 +140,5 @@ export function useOrderStream(options: UseOrderStreamOptions) {
     requestNotificationPermission,
   };
 }
+
+export type { Order };

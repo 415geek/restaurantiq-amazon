@@ -141,16 +141,22 @@ export function DataFilterPanel({ uploadedDocuments, onFilterChange, onClearFilt
             <label className="text-sm font-medium text-zinc-300 mb-2 block">
               {lang === 'zh' ? '数据类型' : 'Data Types'}
             </label>
-            <Select
+            <select
               multiple
               value={filters.dataTypes}
-              onChange={handleDataTypeChange}
-              options={availableDataTypes.map(type => ({
-                value: type,
-                label: type
-              }))}
-              placeholder={lang === 'zh' ? '选择数据类型...' : 'Select data types...'}
-            />
+              onChange={(e) => {
+                const selectedOptions = Array.from(e.target.selectedOptions);
+                const values = selectedOptions.map(option => option.value);
+                handleDataTypeChange(values);
+              }}
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 focus:border-[#F26A36] focus:ring-1 focus:ring-[#F26A36]"
+            >
+              {availableDataTypes.map(type => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
           </div>
         )}
 
