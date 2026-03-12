@@ -14,6 +14,7 @@ export type UberResolvedToken = {
   token: string;
   source: UberResolvedTokenSource;
   warning?: string;
+  setupGuide?: string;
 };
 
 function sanitizeToken(raw?: string | null) {
@@ -52,11 +53,27 @@ function tokenIsFresh(expiresAt?: number) {
 
 async function exchangeClientCredentialsToken(userKey: string): Promise<UberResolvedToken> {
   const clientId = process.env.UBEREATS_CLIENT_ID?.trim();
+  const clientSecret = process.env.UBEREATS_CLIENT_SECRET?.trim();
+  const asymmetricKeyId = process.env.UBEREATS_ASYMMETRIC_KEY_ID?.trim();
+  const privateKey = process.env.UBEREATS_PRIVATE_KEY_PEM?.trim() ||
+                     process.env.UBEREATS_PRIVATE_KEY_BASE64?.trim() ||
+                     process.env.UBEREATS_PRIVATE_KEY_PATH?.trim();
+
   if (!clientId) {
     return {
       token: '',
       source: 'none',
-      warning: 'UBEREATS_CLIENT_ID not configured.',
+      warning: 'Uber Eats not configured',
+      setupGuide: 'To enable Uber Eats integration, apply for developer access at https://developer.uber.com/docs/eats and configure credentials in .env.local',
+    };
+  }
+
+  if (!clientSecret && !asymmetricKeyId && !privateKey) {
+    return {
+      token: '',
+      source: 'none',
+      warning: 'Uber Eats credentials incomplete',
+      setupGuide: 'Configure either UBEREATS_CLIENT_SECRET or UBEREATS_ASYMMETRIC_KEY_ID + private key in .env.local',
     };
   }
 
@@ -84,7 +101,8 @@ async function exchangeClientCredentialsToken(userKey: string): Promise<UberReso
       return {
         token: '',
         source: 'none',
-        warning: `Uber token exchange failed (${details}).`,
+        warning: `Uber token exchange failed (${details})`,
+        setupGuide: 'Check your Uber Eats credentials in .env.local and ensure your app is approved for the required scopes',
       };
     }
 
@@ -109,6 +127,7 @@ async function exchangeClientCredentialsToken(userKey: string): Promise<UberReso
       token: '',
       source: 'none',
       warning: error instanceof Error ? error.message : 'token_exchange_unknown_error',
+      setupGuide: 'Ensure your Uber Eats credentials are correctly configured in .env.local',
     };
   }
 }

@@ -60,6 +60,14 @@ export async function GET(req: NextRequest) {
   const hasActiveToken = Boolean(resolvedToken.token);
   const connected = hasActiveToken;
 
+  // Build helpful error message if not configured
+  let setupGuide: string | undefined;
+  if (!configured) {
+    setupGuide = 'Uber Eats integration requires developer credentials. Apply at https://developer.uber.com/docs/eats and configure UBEREATS_CLIENT_ID and UBEREATS_CLIENT_SECRET in .env.local';
+  } else if (!connected && resolvedToken.warning) {
+    setupGuide = resolvedToken.setupGuide;
+  }
+
   return NextResponse.json({
     configured,
     ubereats: {
@@ -73,6 +81,8 @@ export async function GET(req: NextRequest) {
       stores,
       asymmetricKeyId: process.env.UBEREATS_ASYMMETRIC_KEY_ID || undefined,
       tokenExpiresAt: storeState?.accessTokenExpiresAt ?? undefined,
+      warning: resolvedToken.warning,
+      setupGuide,
     },
     timestamp: new Date().toISOString(),
   });
