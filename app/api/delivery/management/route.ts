@@ -89,6 +89,11 @@ const actionSchema = z.discriminatedUnion('type', [
     available: z.boolean(),
   }),
   z.object({
+    type: z.literal('update_menu_base_price'),
+    itemId: z.string().min(1),
+    basePrice: z.number().min(0),
+  }),
+  z.object({
     type: z.literal('update_channel_price'),
     itemId: z.string().min(1),
     platformKey: platformKeySchema,
@@ -433,6 +438,10 @@ export async function PATCH(req: Request) {
   } else if (action.type === 'toggle_menu_item') {
     state.menu = state.menu.map((item) =>
       item.id === action.itemId ? { ...item, available: action.available } : item
+    );
+  } else if (action.type === 'update_menu_base_price') {
+    state.menu = state.menu.map((item) =>
+      item.id === action.itemId ? { ...item, basePrice: action.basePrice } : item
     );
   } else if (action.type === 'update_channel_price') {
     state.menu = state.menu.map((item) => {

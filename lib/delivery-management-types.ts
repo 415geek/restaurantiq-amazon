@@ -5,6 +5,38 @@ export type DeliveryPlatformKey =
   | 'fantuan'
   | 'hungrypanda';
 
+export type MenuPlatformKey = DeliveryPlatformKey | 'pos';
+
+export type MenuBranchChannelConfig = {
+  enabled: boolean;
+  /**
+   * If omitted, the channel price follows the effective item price (default price or overridden menu price).
+   */
+  price?: number;
+};
+
+export type MenuBranchItem = {
+  itemId: string;
+  included: boolean;
+  /**
+   * Menu-level price override. If omitted, the item follows the default menu price.
+   */
+  priceOverride?: number;
+  stockOverride?: DeliveryStockStatus;
+  availableOverride?: boolean;
+  channels?: Partial<Record<DeliveryPlatformKey, MenuBranchChannelConfig>>;
+};
+
+export type MenuBranch = {
+  id: string;
+  name: string;
+  parentId: 'default';
+  platforms: MenuPlatformKey[];
+  createdAt: string;
+  updatedAt: string;
+  items: MenuBranchItem[];
+};
+
 export type DeliveryOnboardingStep =
   | 'platforms'
   | 'subscription'
@@ -200,7 +232,14 @@ export type DeliveryManagementState = {
   updatedAt: string;
   lastPublishedAt?: string;
   platforms: DeliveryPlatformConnection[];
+  /**
+   * Default menu (the canonical menu catalog). All branch menus derive from this.
+   */
   menu: DeliveryMenuItem[];
+  /**
+   * Branch menus. Each branch references items in the default menu and can override inclusion/pricing.
+   */
+  menuBranches: MenuBranch[];
   orders: DeliveryOrderTicket[];
   automation: DeliveryAutomationConfig;
   webhookEvents: DeliveryWebhookEvent[];

@@ -296,6 +296,7 @@ export function createDefaultDeliveryManagementState(): DeliveryManagementState 
         },
       },
     ],
+    menuBranches: [],
     orders: [
       {
         id: 'o-1',
@@ -439,6 +440,7 @@ function normalizeDeliveryManagementState(raw: unknown): DeliveryManagementState
     ...record,
     platforms: record.platforms || base.platforms,
     menu: record.menu || base.menu,
+    menuBranches: Array.isArray(record.menuBranches) ? record.menuBranches : base.menuBranches,
     orders: record.orders || base.orders,
     automation: record.automation || base.automation,
     webhookEvents: record.webhookEvents || base.webhookEvents,

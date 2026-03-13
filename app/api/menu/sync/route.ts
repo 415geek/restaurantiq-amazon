@@ -4,11 +4,17 @@ import { z } from 'zod';
 import { loadDeliveryManagementState, saveDeliveryManagementState } from '@/lib/server/delivery-management-store';
 import { getUberEatsConnectionState } from '@/lib/server/ubereats-oauth-store';
 import { resolveUberEatsAccessToken } from '@/lib/server/ubereats-token';
+import { computeBranchEffectiveMenu } from '@/lib/server/menu-branches';
+import { getDemoIdFromRequest, demoUserKey } from '@/lib/server/demo-session';
+import type { DeliveryPlatformKey } from '@/lib/delivery-management-types';
 
 export const runtime = 'nodejs';
 
 const bodySchema = z.object({
-  platforms: z.array(z.enum(['ubereats', 'doordash', 'grubhub', 'fantuan', 'hungrypanda'])).min(1),
+  menuId: z.string().optional(),
+  platforms: z
+    .array(z.enum(['ubereats', 'doordash', 'grubhub', 'fantuan', 'hungrypanda']))
+    .optional(),
   itemIds: z.array(z.string()).optional(),
 });
 
@@ -19,6 +25,12 @@ type PlatformSyncResult = {
   error?: string;
   warning?: string;
 };
+
+function resolveUserKey(req: NextRequest, userId: string | null) {
+  const demoId = getDemoIdFromRequest({ headers: req.headers });
+  if (demoId) return demoUserKey(demoId);
+  return userId ?? 'anonymous';
+}
 
 async function syncToUberEats(
   items: Array<{ id: string; name: string; basePrice: number; category: string; channels: Record<string, any> }>,
@@ -101,7 +113,7 @@ async function syncToUberEats(
       };
     }
 
-    const result = await response.json();
+    await response.json().catch(() => null);
     return {
       platform: 'ubereats',
       success: true,
@@ -141,7 +153,7 @@ async function syncToPlatform(
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth();
-  const userKey = userId ?? 'anonymous';
+  const userKey = resolveUserKey(req, userId);
 
   try {
     const payload = await req.json();
@@ -160,17 +172,38 @@ export async function POST(req: NextRequest) {
 
     const state = await loadDeliveryManagementState(userKey);
 
+    const menuId = parsed.data.menuId || 'default';
+    const branch = menuId === 'default' ? null : state.menuBranches.find((m) => m.id === menuId) || null;
+
+    const allItems = branch
+      ? computeBranchEffectiveMenu({ defaultMenu: state.menu, branch })
+      : state.menu;
+
+    const requestedPlatforms: DeliveryPlatformKey[] = parsed.data.platforms
+      ? (parsed.data.platforms as DeliveryPlatformKey[])
+      : (branch
+          ? (branch.platforms.filter((p) => p !== 'pos') as DeliveryPlatformKey[])
+          : (state.platforms
+              .filter((p) => p.status === 'connected')
+              .map((p) => p.key) as DeliveryPlatformKey[]));
+
+    if (!requestedPlatforms.length) {
+      return NextResponse.json(
+        { ok: false, error: 'no_platforms_selected' },
+        { status: 400 }
+      );
+    }
+
     // Filter items to sync
-    const allItems = state.menu;
     const itemsToSync = parsed.data.itemIds
       ? allItems.filter(item => parsed.data.itemIds!.includes(item.id))
       : allItems.filter(item => {
           // Sync items that are enabled for any of the requested platforms
-          return parsed.data.platforms.some(platform => item.channels[platform]?.enabled);
+          return requestedPlatforms.some(platform => item.channels[platform]?.enabled);
         });
 
     // Sync to each platform
-    const syncPromises = parsed.data.platforms.map(platform =>
+    const syncPromises = requestedPlatforms.map(platform =>
       syncToPlatform(platform as any, itemsToSync, userKey)
     );
 
@@ -201,9 +234,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
+      menuId,
       results,
       totalSynced,
-      totalRequestedPlatforms: parsed.data.platforms.length,
+      totalRequestedPlatforms: requestedPlatforms.length,
       timestamp: syncTime,
     });
   } catch (error) {

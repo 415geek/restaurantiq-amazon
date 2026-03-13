@@ -6,11 +6,8 @@ import {
   AlertTriangle,
   CalendarClock,
   Clock3,
-  Filter,
   Plus,
   RefreshCw,
-  Rocket,
-  Search,
   Store,
   Trash2,
   UploadCloud,
@@ -21,6 +18,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/hooks/useToast';
 import { useDashboardLanguage } from '@/components/providers/DashboardLanguageProvider';
+import { MenuBranchManager } from '@/components/menu/MenuBranchManager';
 import type {
   DeliveryHolidayHoursEntry,
   DeliveryManagementState,
@@ -260,7 +258,7 @@ export function MenuManagementClient() {
           noMenuMatch: 'No menu items under current filters',
           tableDish: 'Dish',
           tableCategory: 'Category',
-          tableBasePrice: 'Base Price',
+          tableBasePrice: 'Base price',
           tableStock: 'Stock',
           tableAvailable: 'Listed',
           listed: 'Listed',
@@ -272,30 +270,30 @@ export function MenuManagementClient() {
           },
           storeOpsTitle: 'Store Operations',
           storeOpsDescription:
-            'Manage Uber Eats operating controls in one place: regular hours (service_availability), holiday overrides (holidayhours), online status, prep offsets (pos_data), and promotion drafts.',
+            'Manage Uber Eats Store Integration settings in one place: weekly service availability + holiday overrides + online status + prep parameters + promotion drafts.',
           storeOpsStore: 'Store',
           storeOpsStatus: 'Online status',
           storeOpsOnline: 'Online',
           storeOpsPaused: 'Paused',
-          storeOpsPrepOffset: 'Prep offset (mins)',
-          storeOpsDefaultPrep: 'Default prep (mins)',
-          storeOpsRegularHours: 'Regular weekly hours',
-          storeOpsHolidayHours: 'Holiday hour overrides',
+          storeOpsPrepOffset: 'Prep time offset (mins)',
+          storeOpsDefaultPrep: 'Default prep time (mins)',
+          storeOpsRegularHours: 'Regular hours (weekly)',
+          storeOpsHolidayHours: 'Holiday overrides',
           storeOpsPromotions: 'Promotion drafts',
           storeOpsRefreshLive: 'Pull from Uber',
-          storeOpsSaveLocal: 'Save local config',
+          storeOpsSaveLocal: 'Save locally',
           storeOpsPush: 'Push to Uber',
           storeOpsSaving: 'Saving…',
           storeOpsPushing: 'Pushing…',
           storeOpsAddSlot: 'Add slot',
           storeOpsAddHoliday: 'Add holiday',
           storeOpsRemove: 'Remove',
-          storeOpsClosed: 'Closed all day',
-          storeOpsPromoName: 'Promo name',
-          storeOpsPromoType: 'Promo type',
+          storeOpsClosed: 'Closed',
+          storeOpsPromoName: 'Promotion name',
+          storeOpsPromoType: 'Type',
           storeOpsPromoValue: 'Value',
-          storeOpsPromoStart: 'Start',
-          storeOpsPromoEnd: 'End',
+          storeOpsPromoStart: 'Starts',
+          storeOpsPromoEnd: 'Ends',
           storeOpsPromoEnabled: 'Enabled',
           storeOpsNoStore: 'No store available yet. Complete Uber authorization and configure store_id first.',
           storeOpsNoWarnings: 'No warnings.',
@@ -324,11 +322,6 @@ export function MenuManagementClient() {
   const [selectedStoreId, setSelectedStoreId] = useState<string>('');
   const [storeOpsDraft, setStoreOpsDraft] = useState<DeliveryStoreOperationsState | null>(null);
   const [storeOpsPushMessages, setStoreOpsPushMessages] = useState<string[]>([]);
-
-  const [menuSearch, setMenuSearch] = useState('');
-  const [menuCategoryFilter, setMenuCategoryFilter] = useState<string>('all');
-  const [menuPlatformFilter, setMenuPlatformFilter] = useState<'all' | DeliveryPlatformKey>('all');
-  const [menuConnectedOnly, setMenuConnectedOnly] = useState(false);
 
   const loadStoreOps = async (options?: { refresh?: boolean; storeId?: string }) => {
     const params = new URLSearchParams();
@@ -405,287 +398,12 @@ export function MenuManagementClient() {
     }
   };
 
-  const toggleItemListing = async (itemId: string, available: boolean) => {
-    await patchAction({ type: 'toggle_menu_item', itemId, available }, copy.actionDone);
-  };
-
-  const updateChannelPrice = async (
-    itemId: string,
-    platformKey: DeliveryPlatformKey,
-    enabled: boolean,
-    price: number
-  ) => {
-    await patchAction(
-      {
-        type: 'update_channel_price',
-        itemId,
-        platformKey,
-        enabled,
-        price,
-      },
-      copy.actionDone
-    );
-  };
-
-  const publishMenu = async () => {
-    await patchAction({ type: 'publish_menu' }, copy.menuPushed);
-  };
-
-  const saveStoreOpsLocal = async () => {
-    if (!storeOpsDraft) return;
-    setStoreOpsSaving(true);
-    try {
-      const res = await fetch('/api/delivery/store-ops', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'save_local',
-          storeId: storeOpsDraft.storeId,
-          onlineStatus: storeOpsDraft.onlineStatus,
-          prepTimeOffsetMins: storeOpsDraft.prepTimeOffsetMins,
-          defaultPrepTimeMins: storeOpsDraft.defaultPrepTimeMins,
-          regularHours: storeOpsDraft.regularHours,
-          holidayHours: storeOpsDraft.holidayHours,
-          promotions: storeOpsDraft.promotions,
-        }),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(payload?.error || 'store_ops_save_failed');
-      }
-      await loadStoreOps({ storeId: storeOpsDraft.storeId });
-      toast.success(copy.actionDone);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'store_ops_save_failed');
-    } finally {
-      setStoreOpsSaving(false);
-    }
-  };
-
-  const pullStoreOpsLive = async () => {
-    if (!storeOpsDraft) return;
-    setStoreOpsSaving(true);
-    try {
-      const res = await fetch('/api/delivery/store-ops', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'pull_live',
-          storeId: storeOpsDraft.storeId,
-        }),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload?.error || 'store_ops_pull_failed');
-      await loadStoreOps({ storeId: storeOpsDraft.storeId });
-      const warnings = Array.isArray(payload?.warnings) ? payload.warnings : [];
-      if (warnings.length) toast.warning(warnings.join(' | '));
-      else toast.success(copy.refresh);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'store_ops_pull_failed');
-    } finally {
-      setStoreOpsSaving(false);
-    }
-  };
-
-  const pushStoreOpsLive = async () => {
-    if (!storeOpsDraft) return;
-    setStoreOpsSaving(true);
-    setStoreOpsPushMessages([]);
-    try {
-      const res = await fetch('/api/delivery/store-ops', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'push_live',
-          storeId: storeOpsDraft.storeId,
-        }),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload?.error || 'store_ops_push_failed');
-      const messages = Array.isArray(payload?.push?.report)
-        ? payload.push.report.map((row: { message?: string }) => row.message || '')
-        : [];
-      setStoreOpsPushMessages(messages.filter(Boolean));
-      await loadStoreOps({ storeId: storeOpsDraft.storeId });
-      if (payload?.ok) toast.success(copy.storeOpsPush);
-      else toast.warning((payload?.push?.warnings || []).join(' | ') || 'push_with_warnings');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'store_ops_push_failed');
-    } finally {
-      setStoreOpsSaving(false);
-    }
-  };
-
-  const updateDraft = (patch: Partial<DeliveryStoreOperationsState>) => {
-    setStoreOpsDraft((prev) => (prev ? { ...prev, ...patch } : prev));
-  };
-
-  const updateWeekdaySlots = (weekday: DeliveryWeekday, rows: DeliveryTimeRange[]) => {
-    if (!storeOpsDraft) return;
-    updateDraft({
-      regularHours: {
-        ...storeOpsDraft.regularHours,
-        [weekday]: rows,
-      },
-    });
-  };
-
-  const addWeekdaySlot = (weekday: DeliveryWeekday) => {
-    const current = storeOpsDraft?.regularHours[weekday] || [];
-    updateWeekdaySlots(weekday, [...current, { startTime: '11:00', endTime: '21:00' }]);
-  };
-
-  const updateHolidayRows = (rows: DeliveryHolidayHoursEntry[]) => {
-    updateDraft({ holidayHours: rows });
-  };
-
-  const updatePromotionRows = (rows: DeliveryPromotionDraft[]) => {
-    updateDraft({ promotions: rows });
-  };
-
-  const updateWeekdaySlot = (
-    weekday: DeliveryWeekday,
-    index: number,
-    field: keyof DeliveryTimeRange,
-    value: string
-  ) => {
-    const rows = [...(storeOpsDraft?.regularHours[weekday] || [])];
-    if (!rows[index]) return;
-    rows[index] = {
-      ...rows[index],
-      [field]: value,
-    };
-    updateWeekdaySlots(weekday, rows);
-  };
-
-  const removeWeekdaySlot = (weekday: DeliveryWeekday, index: number) => {
-    const rows = [...(storeOpsDraft?.regularHours[weekday] || [])];
-    rows.splice(index, 1);
-    updateWeekdaySlots(weekday, rows);
-  };
-
-  const appendHolidayRow = () => {
-    const rows = [...(storeOpsDraft?.holidayHours || [])];
-    const dateSeed = new Date().toISOString().slice(0, 10);
-    rows.push({
-      id: `holiday-${Date.now()}`,
-      date: dateSeed,
-      startTime: '11:00',
-      endTime: '21:00',
-      closed: false,
-    });
-    updateHolidayRows(rows);
-  };
-
-  const updateHolidayRow = (
-    index: number,
-    patch: Partial<DeliveryHolidayHoursEntry>
-  ) => {
-    const rows = [...(storeOpsDraft?.holidayHours || [])];
-    if (!rows[index]) return;
-    rows[index] = {
-      ...rows[index],
-      ...patch,
-    };
-    updateHolidayRows(rows);
-  };
-
-  const removeHolidayRow = (index: number) => {
-    const rows = [...(storeOpsDraft?.holidayHours || [])];
-    rows.splice(index, 1);
-    updateHolidayRows(rows);
-  };
-
-  const appendPromotionRow = () => {
-    const now = new Date();
-    const start = new Date(now.getTime() + 15 * 60 * 1000);
-    const end = new Date(now.getTime() + 3 * 60 * 60 * 1000);
-    const rows = [...(storeOpsDraft?.promotions || [])];
-    rows.push({
-      id: `promo-${Date.now()}`,
-      name: lang === 'zh' ? '新促销活动' : 'New promotion',
-      type: 'percentage',
-      value: 10,
-      enabled: true,
-      startAt: start.toISOString().slice(0, 19),
-      endAt: end.toISOString().slice(0, 19),
-      target: 'store',
-      targetIds: storeOpsDraft ? [storeOpsDraft.storeId] : [],
-      syncStatus: 'idle',
-    });
-    updatePromotionRows(rows);
-  };
-
-  const updatePromotionRow = (
-    index: number,
-    patch: Partial<DeliveryPromotionDraft>
-  ) => {
-    const rows = [...(storeOpsDraft?.promotions || [])];
-    if (!rows[index]) return;
-    rows[index] = {
-      ...rows[index],
-      ...patch,
-    };
-    updatePromotionRows(rows);
-  };
-
-  const removePromotionRow = (index: number) => {
-    const rows = [...(storeOpsDraft?.promotions || [])];
-    rows.splice(index, 1);
-    updatePromotionRows(rows);
-  };
-
-  const toDateTimeLocalValue = (value?: string) => {
-    if (!value) return '';
-    const normalized = value.includes(' ') ? value.replace(' ', 'T') : value;
-    return normalized.length >= 16 ? normalized.slice(0, 16) : normalized;
-  };
-
-  const fromDateTimeLocalValue = (value: string) => {
-    if (!value) return '';
-    return value.length === 16 ? `${value}:00` : value;
-  };
-
-  const formatTimestamp = (value?: string) => {
-    if (!value) return '--';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', {
-      hour12: false,
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
   const connectedPlatformKeys = useMemo(
     () => new Set((state?.platforms ?? []).filter((platform) => platform.status === 'connected').map((p) => p.key)),
     [state]
   );
 
   const hasConnectedPlatforms = connectedPlatformKeys.size > 0;
-
-  const categories = useMemo(() => {
-    if (!state) return [];
-    return Array.from(new Set(state.menu.map((item) => item.category)));
-  }, [state]);
-
-  const filteredMenu = useMemo(() => {
-    if (!state) return [];
-    const keyword = menuSearch.trim().toLowerCase();
-    return state.menu.filter((item) => {
-      const matchKeyword = !keyword || item.name.toLowerCase().includes(keyword);
-      const matchCategory = menuCategoryFilter === 'all' || item.category === menuCategoryFilter;
-      const matchPlatform = menuPlatformFilter === 'all' || Boolean(item.channels[menuPlatformFilter]?.enabled);
-      const matchConnectedOnly = !menuConnectedOnly
-        ? true
-        : Object.entries(item.channels).some(
-            ([platformKey, config]) => connectedPlatformKeys.has(platformKey as DeliveryPlatformKey) && Boolean(config?.enabled)
-          );
-      return matchKeyword && matchCategory && matchPlatform && matchConnectedOnly;
-    });
-  }, [state, menuSearch, menuCategoryFilter, menuPlatformFilter, menuConnectedOnly, connectedPlatformKeys]);
 
   if (loading || !state) {
     return (
@@ -698,7 +416,6 @@ export function MenuManagementClient() {
     );
   }
 
-  const menuPlatforms = state.platforms.map((platform) => platform.key);
   const storeRows = storeOpsResponse?.stores || [];
   const activeStoreWarnings = Array.from(
     new Set([...(storeOpsDraft?.syncWarnings || []), ...storeOpsPushMessages].filter(Boolean))
@@ -715,10 +432,6 @@ export function MenuManagementClient() {
             <Button variant="secondary" onClick={() => load()} disabled={loading || saving}>
               <RefreshCw className="h-4 w-4" />
               {copy.refresh}
-            </Button>
-            <Button onClick={publishMenu} disabled={saving || !hasConnectedPlatforms}>
-              <Rocket className="h-4 w-4" />
-              {saving ? copy.publishing : copy.publishMenu}
             </Button>
           </>
         }
@@ -1198,276 +911,31 @@ export function MenuManagementClient() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{copy.title}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-3 lg:grid-cols-[1.5fr_1fr_1fr_auto]">
-            <label className="space-y-1">
-              <span className="text-xs text-zinc-500">{copy.searchByName}</span>
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
-                <input
-                  type="text"
-                  value={menuSearch}
-                  onChange={(event) => setMenuSearch(event.target.value)}
-                  placeholder={lang === 'zh' ? '输入菜品名称' : 'Search item name'}
-                  className="h-10 w-full rounded-xl border border-zinc-700 bg-zinc-900 pl-9 pr-3 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-[#F26A36]/70"
-                />
-              </div>
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-zinc-500">{copy.tableCategory}</span>
-              <select
-                value={menuCategoryFilter}
-                onChange={(event) => setMenuCategoryFilter(event.target.value)}
-                className="h-10 w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-[#F26A36]/70"
-              >
-                <option value="all">{copy.allCategories}</option>
-                {categories.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-zinc-500">{copy.filterByPlatform}</span>
-              <select
-                value={menuPlatformFilter}
-                onChange={(event) => setMenuPlatformFilter(event.target.value as 'all' | DeliveryPlatformKey)}
-                className="h-10 w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-[#F26A36]/70"
-              >
-                <option value="all">{copy.allPlatforms}</option>
-                {state.platforms.map((platform) => (
-                  <option key={platform.key} value={platform.key}>
-                    {platform.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="flex items-end">
-              <Button
-                size="md"
-                variant="secondary"
-                className="h-10"
-                onClick={() => {
-                  setMenuSearch('');
-                  setMenuCategoryFilter('all');
-                  setMenuPlatformFilter('all');
-                  setMenuConnectedOnly(false);
-                }}
-              >
-                <Filter className="h-4 w-4" />
-                {copy.clearFilters}
-              </Button>
-            </div>
-          </div>
-
-          <label className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-950/40 px-3 py-2">
-            <span className="text-xs text-zinc-400">{copy.showConnectedOnly}</span>
-            <button
-              type="button"
-              onClick={() => setMenuConnectedOnly((prev) => !prev)}
-              className={`h-6 w-12 rounded-full border px-1 transition ${
-                menuConnectedOnly ? 'border-[#F26A36]/50 bg-[#F26A36]/20' : 'border-zinc-700 bg-zinc-900'
-              }`}
-            >
-              <span
-                className={`block h-4 w-4 rounded-full bg-white transition ${
-                  menuConnectedOnly ? 'translate-x-6' : 'translate-x-0'
-                }`}
-              />
-            </button>
-          </label>
-
-          <div className="flex items-center justify-between text-xs text-zinc-500">
-            <span>{copy.showingItems}</span>
-            <span className="font-semibold text-zinc-200">{filteredMenu.length}</span>
-          </div>
-
-          <div className="space-y-3 lg:hidden">
-            {filteredMenu.map((item) => (
-              <div key={`mobile-menu-${item.id}`} className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-zinc-100">{item.name}</p>
-                    <p className="mt-1 text-xs text-zinc-400">{item.category}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-semibold text-zinc-100">${item.basePrice.toFixed(2)}</p>
-                    <Badge
-                      className={
-                        item.stock === 'in_stock'
-                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                          : item.stock === 'low'
-                            ? 'border-yellow-500/30 bg-yellow-500/10 text-yellow-300'
-                            : 'border-red-500/30 bg-red-500/10 text-red-300'
-                      }
-                    >
-                      {copy.stock[item.stock]}
-                    </Badge>
-                  </div>
-                </div>
-                <div className="mt-3 grid gap-2">
-                  {menuPlatforms.map((platformKey) => (
-                    <div
-                      key={`mobile-${item.id}-${platformKey}`}
-                      className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-2"
-                    >
-                      <p className="mb-1 text-[11px] text-zinc-500">
-                        {state.platforms.find((platform) => platform.key === platformKey)?.label ?? platformKey}
-                      </p>
-                      <ChannelPriceEditor
-                        key={`${item.id}-${platformKey}-${String(item.channels[platformKey]?.enabled)}-${String(item.channels[platformKey]?.price ?? item.basePrice)}-mobile`}
-                        enabled={Boolean(item.channels[platformKey]?.enabled)}
-                        price={item.channels[platformKey]?.price ?? item.basePrice}
-                        onSubmit={(enabled, price) => updateChannelPrice(item.id, platformKey, enabled, price)}
-                        disabled={saving}
-                      />
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-3">
-                  <Button
-                    size="sm"
-                    variant={item.available ? 'secondary' : 'ghost'}
-                    onClick={() => toggleItemListing(item.id, !item.available)}
-                    disabled={saving}
-                    className="w-full"
-                  >
-                    {item.available ? copy.listed : copy.hidden}
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="hidden overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950/60 lg:block">
-            <table className="min-w-[1120px] w-full text-sm">
-              <thead className="text-xs uppercase tracking-wide text-zinc-500">
-                <tr>
-                  <th className="px-3 py-2 text-left">{copy.tableDish}</th>
-                  <th className="px-3 py-2 text-left">{copy.tableCategory}</th>
-                  <th className="px-3 py-2 text-right">{copy.tableBasePrice}</th>
-                  {menuPlatforms.map((platformKey) => (
-                    <th key={`head-${platformKey}`} className="px-3 py-2 text-left">
-                      {state.platforms.find((platform) => platform.key === platformKey)?.label ?? platformKey}
-                    </th>
-                  ))}
-                  <th className="px-3 py-2 text-left">{copy.tableStock}</th>
-                  <th className="px-3 py-2 text-left">{copy.tableAvailable}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredMenu.map((item) => (
-                  <tr key={item.id} className="border-t border-zinc-800">
-                    <td className="px-3 py-3 font-medium text-zinc-100">{item.name}</td>
-                    <td className="px-3 py-3 text-zinc-400">{item.category}</td>
-                    <td className="px-3 py-3 text-right text-zinc-100">${item.basePrice.toFixed(2)}</td>
-                    {menuPlatforms.map((platformKey) => (
-                      <td key={`${item.id}-${platformKey}`} className="px-3 py-3">
-                        <ChannelPriceEditor
-                          key={`${item.id}-${platformKey}-${String(item.channels[platformKey]?.enabled)}-${String(item.channels[platformKey]?.price ?? item.basePrice)}`}
-                          enabled={Boolean(item.channels[platformKey]?.enabled)}
-                          price={item.channels[platformKey]?.price ?? item.basePrice}
-                          onSubmit={(enabled, price) => updateChannelPrice(item.id, platformKey, enabled, price)}
-                          disabled={saving}
-                        />
-                      </td>
-                    ))}
-                    <td className="px-3 py-3">
-                      <Badge
-                        className={
-                          item.stock === 'in_stock'
-                            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                            : item.stock === 'low'
-                              ? 'border-yellow-500/30 bg-yellow-500/10 text-yellow-300'
-                              : 'border-red-500/30 bg-red-500/10 text-red-300'
-                        }
-                      >
-                        {copy.stock[item.stock]}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-3">
-                      <Button
-                        size="sm"
-                        variant={item.available ? 'secondary' : 'ghost'}
-                        onClick={() => toggleItemListing(item.id, !item.available)}
-                        disabled={saving}
-                      >
-                        {item.available ? copy.listed : copy.hidden}
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {!filteredMenu.length ? (
-            <div className="rounded-xl border border-dashed border-zinc-800 px-4 py-6 text-sm text-zinc-500">
-              {copy.noMenuMatch}
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
+      <MenuBranchManager state={state} onRefresh={load} />
     </div>
   );
 }
 
-function ChannelPriceEditor({
-  enabled,
-  price,
-  disabled,
-  onSubmit,
-}: {
-  enabled: boolean;
-  price: number;
-  disabled: boolean;
-  onSubmit: (enabled: boolean, price: number) => void;
-}) {
-  const [localEnabled, setLocalEnabled] = useState(() => enabled);
-  const [localPrice, setLocalPrice] = useState(() => String(price.toFixed(2)));
+function formatTimestamp(value?: string) {
+  if (!value) return '--';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', {
+    hour12: false,
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
-  useEffect(() => {
-    setLocalEnabled(enabled);
-    setLocalPrice(String(price.toFixed(2)));
-  }, [enabled, price]);
+function toDateTimeLocalValue(value?: string) {
+  if (!value) return '';
+  const normalized = value.includes(' ') ? value.replace(' ', 'T') : value;
+  return normalized.length >= 16 ? normalized.slice(0, 16) : normalized;
+}
 
-  return (
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        onClick={() => {
-          const next = !localEnabled;
-          setLocalEnabled(next);
-          const nextPrice = Number(localPrice);
-          if (Number.isFinite(nextPrice)) onSubmit(next, nextPrice);
-        }}
-        className={`h-8 rounded-lg border px-2 text-xs ${
-          localEnabled
-            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-            : 'border-zinc-700 bg-zinc-900/60 text-zinc-400'
-        }`}
-        disabled={disabled}
-      >
-        {localEnabled ? 'ON' : 'OFF'}
-      </button>
-      <input
-        type="number"
-        min={0}
-        step={0.1}
-        value={localPrice}
-        onChange={(event) => setLocalPrice(event.target.value)}
-        onBlur={() => {
-          const parsed = Number(localPrice);
-          if (Number.isFinite(parsed)) onSubmit(localEnabled, parsed);
-        }}
-        disabled={disabled}
-        className="w-20 rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:ring-2 focus:ring-[#F26A36]/60"
-      />
-    </div>
-  );
+function fromDateTimeLocalValue(value: string) {
+  if (!value) return '';
+  return value.length === 16 ? `${value}:00` : value;
 }
