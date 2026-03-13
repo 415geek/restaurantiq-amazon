@@ -206,7 +206,7 @@ const contentByLang = {
     hero: {
       title: 'The Next Frontier of Restaurant AI: Execution.',
       subtitle:
-        'More than analytics dashboards, Restaurant IQ turns signals into recommendations and safe execution. Built for restaurant operators across North America, from independent stores to multi-location teams.',
+        'Beyond dashboards, Restaurant IQ turns signals into recommendations—and safe execution—for North American operators.',
       ctaPrimary: 'Start Free Trial',
       ctaSecondary: 'Amazon Nova AI Hackathon Demo',
       tags: ['AI Agent', 'Rollback-enabled Automation', '24/7 Support'],
