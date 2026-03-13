@@ -6,6 +6,8 @@ import { orchestrateRestaurantAnalysis } from '@/lib/server/orchestration/analys
 import { runBusinessIntelAnalysis } from '@/lib/server/business-intel-analysis';
 import { savePersistedAnalysisRuntimeState } from '@/lib/server/analysis-runtime-store';
 import { buildUberEatsOpsDocument } from '@/lib/server/adapters/ubereats-ops';
+import { buildDemoMockOpsDocuments } from '@/lib/server/demo-mock-documents';
+import { getDemoIdFromRequest, demoUserKey } from '@/lib/server/demo-session';
 import type { UploadedOpsDocument } from '@/lib/types';
 
 const schema = z.object({
@@ -78,103 +80,66 @@ function asStringArray(value: unknown): string[] | undefined {
 function asNumberRecord(value: unknown): Record<string, number> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const entries = Object.entries(value).filter(([, item]) => typeof item === 'number' && Number.isFinite(item));
-  return entries.length ? Object.fromEntries(entries) : undefined;
-}
-
-function asStringRecord(value: unknown): Record<string, string> | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const entries = Object.entries(value).filter(([, item]) => typeof item === 'string');
-  return entries.length ? Object.fromEntries(entries) : undefined;
-}
-
-function asBreakdownRecord(value: unknown): Record<string, { orders: number; revenue: number }> | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const entries = Object.entries(value)
-    .map(([key, item]) => {
-      if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-      const orders = asNumber((item as { orders?: unknown }).orders, Number.NaN);
-      const revenue = asNumber((item as { revenue?: unknown }).revenue, Number.NaN);
-      if (!Number.isFinite(orders) || !Number.isFinite(revenue)) return null;
-      return [key, { orders, revenue }] as const;
-    })
-    .filter((entry): entry is readonly [string, { orders: number; revenue: number }] => entry !== null);
-  return entries.length ? Object.fromEntries(entries) : undefined;
+  if (!entries.length) return undefined;
+  return Object.fromEntries(entries);
 }
 
 function normalizeStructuredPreview(value: unknown): UploadedOpsDocument['structuredPreview'] | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const raw = value as Record<string, unknown>;
-  const format = VALID_FORMATS.has(raw.format as StructuredPreview['format'])
-    ? (raw.format as StructuredPreview['format'])
-    : 'binary';
-  const sourceType = VALID_SOURCE_TYPES.has(raw.sourceType as StructuredPreview['sourceType'])
-    ? (raw.sourceType as StructuredPreview['sourceType'])
+  const record = value as Record<string, unknown>;
+  const format = VALID_FORMATS.has(record.format as StructuredPreview['format'])
+    ? (record.format as StructuredPreview['format'])
+    : 'text';
+  const sourceType = VALID_SOURCE_TYPES.has(record.sourceType as StructuredPreview['sourceType'])
+    ? (record.sourceType as StructuredPreview['sourceType'])
     : undefined;
-  const inferredTimeGrain = VALID_TIME_GRAINS.has(raw.inferredTimeGrain as StructuredPreview['inferredTimeGrain'])
-    ? (raw.inferredTimeGrain as StructuredPreview['inferredTimeGrain'])
+  const inferredTimeGrain = VALID_TIME_GRAINS.has(record.inferredTimeGrain as StructuredPreview['inferredTimeGrain'])
+    ? (record.inferredTimeGrain as StructuredPreview['inferredTimeGrain'])
     : undefined;
-
-  const rowSample = Array.isArray(raw.rowSample)
-    ? raw.rowSample
-        .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
-        .map((item) =>
-          Object.fromEntries(
-            Object.entries(item)
-              .filter(([, entryValue]) => ['string', 'number', 'boolean'].includes(typeof entryValue))
-              .map(([key, entryValue]) => [key, String(entryValue)])
-          )
-        )
-        .filter((item) => Object.keys(item).length > 0)
-    : undefined;
-
-  const businessMetricsRaw =
-    raw.businessMetrics && typeof raw.businessMetrics === 'object' && !Array.isArray(raw.businessMetrics)
-      ? (raw.businessMetrics as Record<string, unknown>)
-      : null;
 
   return {
     format,
     sourceType,
-    rowCount: typeof raw.rowCount === 'number' ? raw.rowCount : undefined,
-    columns: asStringArray(raw.columns),
-    sampleValues: asStringRecord(raw.sampleValues),
-    numericMetrics: asNumberRecord(raw.numericMetrics),
-    canonicalMetrics: asNumberRecord(raw.canonicalMetrics),
-    businessMetrics: businessMetricsRaw
-      ? {
-          totalOrders: typeof businessMetricsRaw.totalOrders === 'number' ? businessMetricsRaw.totalOrders : undefined,
-          daysWithData: typeof businessMetricsRaw.daysWithData === 'number' ? businessMetricsRaw.daysWithData : undefined,
-          actualRevenue: typeof businessMetricsRaw.actualRevenue === 'number' ? businessMetricsRaw.actualRevenue : undefined,
-          grossRevenue: typeof businessMetricsRaw.grossRevenue === 'number' ? businessMetricsRaw.grossRevenue : undefined,
-          discountTotal: typeof businessMetricsRaw.discountTotal === 'number' ? businessMetricsRaw.discountTotal : undefined,
-          tipsTotal: typeof businessMetricsRaw.tipsTotal === 'number' ? businessMetricsRaw.tipsTotal : undefined,
-          refundCount: typeof businessMetricsRaw.refundCount === 'number' ? businessMetricsRaw.refundCount : undefined,
-          refundAmount: typeof businessMetricsRaw.refundAmount === 'number' ? businessMetricsRaw.refundAmount : undefined,
-          itemsSold: typeof businessMetricsRaw.itemsSold === 'number' ? businessMetricsRaw.itemsSold : undefined,
-        }
+    rowCount: typeof record.rowCount === 'number' ? record.rowCount : undefined,
+    columns: asStringArray(record.columns),
+    sampleValues: typeof record.sampleValues === 'object' && record.sampleValues && !Array.isArray(record.sampleValues)
+      ? Object.fromEntries(
+          Object.entries(record.sampleValues as Record<string, unknown>)
+            .filter(([, v]) => typeof v === 'string')
+            .map(([k, v]) => [k, v as string])
+        )
       : undefined,
-    platformBreakdown: asBreakdownRecord(raw.platformBreakdown),
-    orderTypeBreakdown: asBreakdownRecord(raw.orderTypeBreakdown),
+    numericMetrics: asNumberRecord(record.numericMetrics),
+    canonicalMetrics: asNumberRecord(record.canonicalMetrics),
+    businessMetrics:
+      typeof record.businessMetrics === 'object' && record.businessMetrics && !Array.isArray(record.businessMetrics)
+        ? (record.businessMetrics as StructuredPreview['businessMetrics'])
+        : undefined,
+    platformBreakdown:
+      typeof record.platformBreakdown === 'object' && record.platformBreakdown && !Array.isArray(record.platformBreakdown)
+        ? (record.platformBreakdown as StructuredPreview['platformBreakdown'])
+        : undefined,
+    orderTypeBreakdown:
+      typeof record.orderTypeBreakdown === 'object' && record.orderTypeBreakdown && !Array.isArray(record.orderTypeBreakdown)
+        ? (record.orderTypeBreakdown as StructuredPreview['orderTypeBreakdown'])
+        : undefined,
     dateStats:
-      raw.dateStats && typeof raw.dateStats === 'object' && !Array.isArray(raw.dateStats)
-        ? {
-            uniqueDays: typeof (raw.dateStats as { uniqueDays?: unknown }).uniqueDays === 'number'
-              ? ((raw.dateStats as { uniqueDays?: number }).uniqueDays)
-              : undefined,
-          }
+      typeof record.dateStats === 'object' && record.dateStats && !Array.isArray(record.dateStats)
+        ? (record.dateStats as StructuredPreview['dateStats'])
         : undefined,
     dateRange:
-      raw.dateRange && typeof raw.dateRange === 'object' && !Array.isArray(raw.dateRange)
-        ? {
-            start: asString((raw.dateRange as { start?: unknown }).start) || undefined,
-            end: asString((raw.dateRange as { end?: unknown }).end) || undefined,
-          }
+      typeof record.dateRange === 'object' && record.dateRange && !Array.isArray(record.dateRange)
+        ? (record.dateRange as StructuredPreview['dateRange'])
         : undefined,
-    detectedKeywords: asStringArray(raw.detectedKeywords),
-    datasetHints: asStringArray(raw.datasetHints),
-    rowSample,
-    qualityFlags: asStringArray(raw.qualityFlags),
-    parserConfidence: typeof raw.parserConfidence === 'number' ? raw.parserConfidence : undefined,
+    detectedKeywords: asStringArray(record.detectedKeywords),
+    datasetHints: asStringArray(record.datasetHints),
+    rowSample:
+      Array.isArray(record.rowSample)
+        ? (record.rowSample as Array<Record<string, string>>)
+        : undefined,
+    qualityFlags: asStringArray(record.qualityFlags),
+    parserConfidence:
+      typeof record.parserConfidence === 'number' ? record.parserConfidence : undefined,
     inferredTimeGrain,
   };
 }
@@ -190,31 +155,36 @@ function normalizeUploadedDocument(value: Record<string, unknown>, index: number
     ? (value.source as UploadedOpsDocument['source'])
     : 'manual_upload';
 
+  const extractedText = asString(value.extractedText);
+  const excerpt = asString(value.excerpt, extractedText.slice(0, 280));
+
   return {
-    id: asString(value.id, crypto.randomUUID()),
-    fileName: asString(value.fileName, `uploaded-document-${index + 1}`),
-    mimeType: asString(value.mimeType, 'application/octet-stream'),
-    size: asNumber(value.size, 0),
+    id: asString(value.id, `uploaded-${index}`),
+    fileName: asString(value.fileName, `uploaded-${index}`),
+    mimeType: asString(value.mimeType, 'text/plain'),
+    size: asNumber(value.size, extractedText.length),
     category,
     parsingStatus,
     source,
-    extractedText: asString(value.extractedText),
-    excerpt: asString(value.excerpt, asString(value.fileName, `uploaded-document-${index + 1}`)),
+    extractedText,
+    excerpt,
     cleaningActions: asStringArray(value.cleaningActions),
     structuredPreview: normalizeStructuredPreview(value.structuredPreview),
     uploadedAt: asString(value.uploadedAt, new Date().toISOString()),
   };
 }
 
-function normalizeBusinessTarget(target: z.infer<typeof schema>['businessTarget']) {
-  if (!target) return null;
+function normalizeBusinessTarget(target: unknown) {
+  if (!target || typeof target !== 'object' || Array.isArray(target)) return null;
+  const value = target as Record<string, unknown>;
+  if (typeof value.name !== 'string' || typeof value.address !== 'string') return null;
   return {
-    name: target.name.trim(),
-    address: target.address.trim(),
-    googlePlaceId: target.googlePlaceId?.trim() || undefined,
-    yelpBusinessId: target.yelpBusinessId?.trim() || undefined,
-    lat: target.lat,
-    lng: target.lng,
+    name: value.name.trim(),
+    address: value.address.trim(),
+    googlePlaceId: typeof value.googlePlaceId === 'string' ? value.googlePlaceId.trim() : undefined,
+    yelpBusinessId: typeof value.yelpBusinessId === 'string' ? value.yelpBusinessId.trim() : undefined,
+    lat: typeof value.lat === 'number' ? value.lat : undefined,
+    lng: typeof value.lng === 'number' ? value.lng : undefined,
   };
 }
 
@@ -225,19 +195,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid analysis request payload.' }, { status: 400 });
   }
 
+  const demoId = getDemoIdFromRequest({ headers: req.headers });
+  const isDemo = Boolean(demoId);
+
   const uploadedDocuments = (parsed.data.uploadedDocuments ?? []).map(normalizeUploadedDocument);
   const businessTarget = normalizeBusinessTarget(parsed.data.businessTarget);
   const { userId } = await auth();
-  const userKey = userId ?? 'anonymous';
+  const userKey = isDemo && demoId ? demoUserKey(demoId) : (userId ?? 'anonymous');
 
   let ubereatsWarning: string | undefined;
   const analysisDocuments = uploadedDocuments.filter((doc) => doc.source !== 'ubereats_api');
+
   if (!businessTarget) {
-    const ubereatsSnapshot = await buildUberEatsOpsDocument(userKey);
-    if (ubereatsSnapshot.document) {
-      analysisDocuments.unshift(ubereatsSnapshot.document);
+    if (isDemo) {
+      if (!analysisDocuments.length) {
+        analysisDocuments.unshift(...buildDemoMockOpsDocuments());
+      }
+    } else {
+      const ubereatsSnapshot = await buildUberEatsOpsDocument(userKey);
+      if (ubereatsSnapshot.document) {
+        analysisDocuments.unshift(ubereatsSnapshot.document);
+      }
+      ubereatsWarning = ubereatsSnapshot.warning;
     }
-    ubereatsWarning = ubereatsSnapshot.warning;
   }
 
   const result = businessTarget
@@ -254,13 +234,16 @@ export async function POST(req: Request) {
         userKey,
       });
 
-  const mergedWarning = [result.warning, ubereatsWarning].filter(Boolean).join(' ');
+  const mergedWarning = [result.warning, ubereatsWarning]
+    .filter(Boolean)
+    .concat(isDemo ? ['Demo mode: operating data uses mock datasets.'] : [])
+    .join(' ');
   const nextResult = {
     ...result,
     warning: mergedWarning || undefined,
   };
 
-  if (userId) {
+  if (userId && !isDemo) {
     await savePersistedAnalysisRuntimeState(userId, {
       analysis: nextResult,
       uploadedDocuments: analysisDocuments,

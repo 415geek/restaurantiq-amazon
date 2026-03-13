@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import { getAgentStudioHost, getRequestHost, isAgentStudioHost } from '@/lib/agent-studio-host';
+import { DEMO_COOKIE_NAME } from '@/lib/server/demo-session';
 
 const isProtectedRoute = createRouteMatcher([
   '/analysis(.*)',
@@ -24,8 +25,16 @@ function buildPrimarySignInUrl(targetUrl: string) {
   return signInUrl;
 }
 
+function hasDemoCookie(cookieHeader: string | null) {
+  if (!cookieHeader) return false;
+  return cookieHeader.split(';').some((part) => part.trim().startsWith(`${DEMO_COOKIE_NAME}=`));
+}
+
 const clerkHandler = clerkMiddleware(async (auth, req) => {
   if (isProtectedRoute(req)) {
+    // Demo sessions can access the dashboard without Clerk login.
+    if (hasDemoCookie(req.headers.get('cookie'))) return;
+
     const session = await auth();
     if (!session.userId) {
       if (isAgentStudioHost(getRequestHost(req.headers.get('host')))) {

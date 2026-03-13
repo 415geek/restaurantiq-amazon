@@ -27,6 +27,10 @@ function isRetryableStatus(status: number) {
   return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
 }
 
+function isDemoUserKey(userKey: string) {
+  return userKey.startsWith('demo_');
+}
+
 async function resolveUberToken(userKey: string) {
   const resolved = await resolveUberEatsAccessToken(userKey);
   if (resolved.token) return resolved.token;
@@ -145,6 +149,16 @@ export async function executePlatformChanges(
       message: 'No changes to sync for this platform.',
       syncedAt: nowIso(),
       appliedChanges: [],
+    };
+  }
+
+  if (isDemoUserKey(request.userKey)) {
+    return {
+      success: true,
+      retryable: false,
+      message: 'Demo mode: simulated platform sync (no real changes were sent).',
+      syncedAt: nowIso(),
+      appliedChanges: request.changes,
     };
   }
 

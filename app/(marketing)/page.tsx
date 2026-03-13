@@ -405,14 +405,39 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen bg-[#0A0A0A] text-white selection:bg-[#F26A36] selection:text-white">
-      {isDemoModalOpen && <BookDemoModal key={language} setIsOpen={setIsDemoModalOpen} copy={copy.modal} onSubmit={async (data) => {
-        toast.promise(new Promise((resolve) => setTimeout(resolve, 1500)), {
-          loading: copy.modal.toast.loading,
-          success: copy.modal.toast.success,
-          error: copy.modal.toast.error,
-        });
-        setTimeout(() => setIsDemoModalOpen(false), 2000);
-      }} />}
+      {isDemoModalOpen && (
+        <BookDemoModal
+          key={language}
+          setIsOpen={setIsDemoModalOpen}
+          copy={copy.modal}
+          onSubmit={async (data) => {
+            const run = async () => {
+              const res = await fetch('/api/marketing/demo-request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: data.name,
+                  email: data.email,
+                }),
+              });
+              const payload = await res.json().catch(() => ({}));
+              if (!res.ok || payload?.success !== true) {
+                throw new Error(payload?.error ? 'Invalid form input' : 'demo_request_failed');
+              }
+            };
+
+            toast.promise(run(), {
+              loading: copy.modal.toast.loading,
+              success: () => {
+                // Cookie is set by the server response.
+                window.location.href = '/dashboard';
+                return copy.modal.toast.success;
+              },
+              error: copy.modal.toast.error,
+            });
+          }}
+        />
+      )}
       {lightboxImage && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"

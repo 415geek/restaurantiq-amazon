@@ -20,6 +20,7 @@ import {
   validateHolidayHours,
   validateRegularHours,
 } from '@/lib/server/ubereats-store-ops';
+import { getDemoIdFromRequest, demoUserKey } from '@/lib/server/demo-session';
 
 export const runtime = 'nodejs';
 
@@ -119,14 +120,18 @@ function normalizeStoreOpsInput(input: {
 }
 
 export async function GET(req: NextRequest) {
+  const demoId = getDemoIdFromRequest({ headers: req.headers });
+  const isDemo = Boolean(demoId);
+
   const { userId } = await auth();
-  const userKey = userId ?? 'anonymous';
+  const userKey = isDemo && demoId ? demoUserKey(demoId) : (userId ?? 'anonymous');
+
   const storeId = req.nextUrl.searchParams.get('storeId');
   const refresh = req.nextUrl.searchParams.get('refresh') === 'true';
 
   let state = ensureStoreOpsState(await loadDeliveryManagementState(userKey), userKey);
 
-  if (refresh) {
+  if (!isDemo && refresh) {
     const selected = pickStore(state.storeOps, storeId);
     if (selected) {
       const live = await pullStoreOpsFromUber({ userKey, storeOps: selected });
@@ -153,12 +158,17 @@ export async function GET(req: NextRequest) {
     })),
     storeOps: state.storeOps,
     updatedAt: state.updatedAt,
+    warning: isDemo ? 'Demo mode: store operations are mock data.' : undefined,
   });
 }
 
 export async function PATCH(req: NextRequest) {
+  const demoId = getDemoIdFromRequest({ headers: req.headers });
+  const isDemo = Boolean(demoId);
+
   const { userId } = await auth();
-  const userKey = userId ?? 'anonymous';
+  const userKey = isDemo && demoId ? demoUserKey(demoId) : (userId ?? 'anonymous');
+
   const payload = await req.json().catch(() => null);
   const parsed = actionSchema.safeParse(payload);
 
@@ -223,7 +233,19 @@ export async function PATCH(req: NextRequest) {
       storeOps: state.storeOps,
       selectedStoreId: action.storeId,
       updatedAt: state.updatedAt,
+      warning: isDemo ? 'Demo mode: changes saved locally only.' : undefined,
     });
+  }
+
+  if (isDemo) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'demo_mode_live_sync_disabled',
+        message: 'Demo mode: live pull/push is disabled.',
+      },
+      { status: 400 }
+    );
   }
 
   if (action.type === 'pull_live') {
@@ -258,11 +280,10 @@ export async function PATCH(req: NextRequest) {
     syncSource: push.ok ? 'live' : 'local',
     promotions: selected.promotions.map((promotion) => {
       if (!promotion.enabled) return promotion;
-      const failedPromotionStep = push.report.find((step) => step.step === 'promotions' && !step.ok);
       return {
         ...promotion,
-        syncStatus: failedPromotionStep ? 'error' : 'synced',
-        lastError: failedPromotionStep ? failedPromotionStep.message : undefined,
+        syncStatus: push.ok ? 'synced' : 'error',
+        lastError: push.ok ? undefined : (push.warnings[0] || 'push_failed'),
       };
     }),
   };
@@ -271,9 +292,9 @@ export async function PATCH(req: NextRequest) {
   state = await saveDeliveryManagementState(userKey, state);
 
   return NextResponse.json({
-    ok: push.ok,
+    ok: true,
     message: push.ok ? 'store_ops_pushed_live' : 'store_ops_pushed_with_errors',
-    push,
+    warnings: push.warnings,
     storeOps: state.storeOps,
     selectedStoreId: action.storeId,
     updatedAt: state.updatedAt,

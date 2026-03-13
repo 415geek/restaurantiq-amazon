@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { z } from 'zod';
 import type {
@@ -23,6 +23,7 @@ import { listUberEatsWebhookEvents } from '@/lib/server/ubereats-webhook-store';
 import { parseUberWebhookEventsToOrders } from '@/lib/server/ubereats-order-normalizer';
 import { queryDeliveryOrders } from '@/lib/server/delivery-order-query';
 import { resolveUberEatsAccessToken } from '@/lib/server/ubereats-token';
+import { getDemoIdFromRequest, demoUserKey } from '@/lib/server/demo-session';
 
 export const runtime = 'nodejs';
 
@@ -138,37 +139,22 @@ async function withLiveUberState(
       platform.key === 'ubereats'
         ? {
             ...platform,
-            accessRequestStatus: hasToken
-              ? 'approved'
-              : platform.accessRequestStatus,
             authStatus: hasToken ? 'connected' : platform.authStatus,
+            syncStatus: hasToken ? 'synced' : platform.syncStatus,
+            lastSyncAt: hasToken ? platform.lastSyncAt || new Date().toISOString() : platform.lastSyncAt,
+            note: hasToken
+              ? platform.note || `Connected (token expires ${new Date(userConnection?.accessTokenExpiresAt || Date.now()).toLocaleString()}).`
+              : platform.note,
           }
         : platform
     ),
   };
-
-  if (hasToken) {
-    const allAuthorized = nextOnboarding.selectedPlatforms.every((key) => {
-      const found = nextOnboarding.platformStates.find((entry) => entry.key === key);
-      return found?.authStatus === 'connected';
-    });
-    if (allAuthorized) {
-      nextOnboarding.checklist.authorizationCompleted = true;
-    }
-  }
 
   return {
     ...state,
     platforms: nextPlatforms,
     onboarding: nextOnboarding,
   };
-}
-
-function recalcPlatformQueues(state: DeliveryManagementState) {
-  return state.platforms.map((platform) => ({
-    ...platform,
-    queueSize: orderQueueForPlatform(state.orders, platform.key),
-  }));
 }
 
 function mergeWebhookPreview(state: DeliveryManagementState, events: Awaited<ReturnType<typeof listUberEatsWebhookEvents>>): DeliveryManagementState {
@@ -184,77 +170,21 @@ function mergeWebhookPreview(state: DeliveryManagementState, events: Awaited<Ret
   };
 }
 
-function mergeWebhookOrders(
-  state: DeliveryManagementState,
-  events: Awaited<ReturnType<typeof listUberEatsWebhookEvents>>
-): DeliveryManagementState {
-  const webhookOrders = parseUberWebhookEventsToOrders(events);
-  if (!webhookOrders.length) return state;
-
-  const merged = new Map<string, DeliveryOrderTicket>();
-  for (const order of state.orders) {
-    merged.set(`state:${order.platform}:${order.id}`, order);
-    merged.set(`state:${order.platform}:${order.channelOrderId}`, order);
-  }
-
-  for (const order of webhookOrders) {
-    const keyById = `state:ubereats:${order.id}`;
-    const keyByChannel = `state:ubereats:${order.channelOrderId}`;
-    const existing = merged.get(keyById) || merged.get(keyByChannel);
-    const next: DeliveryOrderTicket = {
-      id: existing?.id ?? order.id,
+function mergeWebhookOrders(state: DeliveryManagementState, events: Awaited<ReturnType<typeof listUberEatsWebhookEvents>>): DeliveryManagementState {
+  const orders = parseUberWebhookEventsToOrders(events);
+  const merged = new Map(state.orders.map((order) => [order.id, order] as const));
+  for (const order of orders) {
+    merged.set(order.id, {
+      id: order.id,
       channelOrderId: order.channelOrderId,
       platform: 'ubereats',
       customerName: order.customerName,
-      items: order.items.length ? order.items : existing?.items ?? [],
-      amount: order.amount || existing?.amount || 0,
+      items: order.items,
+      amount: order.amount,
       status: order.status,
       placedAt: order.placedAt,
-      etaMins: order.etaMins || existing?.etaMins || 0,
-      notes: order.notes ?? existing?.notes,
-    };
-    merged.set(keyById, next);
-    merged.set(keyByChannel, next);
-  }
-
-  const deduped = new Map<string, DeliveryOrderTicket>();
-  for (const order of merged.values()) {
-    const key = `${order.platform}:${order.id}`;
-    if (!deduped.has(key)) deduped.set(key, order);
-  }
-
-  return {
-    ...state,
-    orders: [...deduped.values()].sort((a, b) => +new Date(b.placedAt) - +new Date(a.placedAt)),
-  };
-}
-
-async function mergeOrderQueryOrders(
-  userKey: string,
-  state: DeliveryManagementState
-): Promise<DeliveryManagementState> {
-  const queried = await queryDeliveryOrders(userKey, {});
-  if (!queried.orders.length) return state;
-
-  const merged = new Map<string, DeliveryOrderTicket>();
-  for (const order of state.orders) {
-    merged.set(`${order.platform}:${order.id}`, order);
-  }
-
-  for (const row of queried.orders) {
-    const key = `${row.platform}:${row.id}`;
-    const existing = merged.get(key);
-    merged.set(key, {
-      id: row.id,
-      channelOrderId: row.channelOrderId,
-      platform: row.platform,
-      customerName: row.customerName,
-      items: existing?.items ?? [],
-      amount: row.amount,
-      status: row.status,
-      placedAt: row.placedAt,
-      etaMins: row.etaMins,
-      notes: existing?.notes,
+      etaMins: order.etaMins,
+      notes: order.notes,
     });
   }
 
@@ -262,6 +192,44 @@ async function mergeOrderQueryOrders(
     ...state,
     orders: [...merged.values()].sort((a, b) => +new Date(b.placedAt) - +new Date(a.placedAt)),
   };
+}
+
+async function mergeOrderQueryOrders(userKey: string, state: DeliveryManagementState): Promise<DeliveryManagementState> {
+  const response = await queryDeliveryOrders(userKey, {
+    platform: undefined,
+    dateFrom: undefined,
+    dateTo: undefined,
+    customer: undefined,
+    q: undefined,
+  });
+
+  const merged = new Map(state.orders.map((order) => [order.id, order] as const));
+  for (const row of response.orders) {
+    if (merged.has(row.id)) continue;
+    merged.set(row.id, {
+      id: row.id,
+      channelOrderId: row.channelOrderId,
+      platform: row.platform,
+      customerName: row.customerName,
+      items: [],
+      amount: row.amount,
+      status: row.status,
+      placedAt: row.placedAt,
+      etaMins: row.etaMins,
+    });
+  }
+  return {
+    ...state,
+    orders: [...merged.values()].sort((a, b) => +new Date(b.placedAt) - +new Date(a.placedAt)),
+  };
+}
+
+function recalcPlatformQueues(state: DeliveryManagementState) {
+  return state.platforms.map((platform) => ({
+    ...platform,
+    queueSize: orderQueueForPlatform(state.orders, platform.key),
+    avgPrepMins: platform.avgPrepMins || 18,
+  }));
 }
 
 const onboardingStepOrder: DeliveryOnboardingStep[] = [
@@ -293,9 +261,21 @@ function progressOnboardingTo(state: DeliveryManagementState, step: DeliveryOnbo
     state.onboarding.checklist.initialSyncCompleted;
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const demoId = getDemoIdFromRequest({ headers: req.headers });
+  const isDemo = Boolean(demoId);
+
   const { userId } = await auth();
-  const userKey = userId ?? 'anonymous';
+  const userKey = isDemo && demoId ? demoUserKey(demoId) : (userId ?? 'anonymous');
+
+  if (isDemo) {
+    const state = await loadDeliveryManagementState(userKey);
+    return NextResponse.json({
+      ...state,
+      platforms: recalcPlatformQueues(state),
+    });
+  }
+
   const state = await loadDeliveryManagementState(userKey);
   const merged = await withLiveUberState(state, userKey);
   const events = await listUberEatsWebhookEvents(20);
@@ -309,8 +289,12 @@ export async function GET() {
 }
 
 export async function PATCH(req: Request) {
+  const demoId = getDemoIdFromRequest({ headers: req.headers });
+  const isDemo = Boolean(demoId);
+
   const { userId } = await auth();
-  const userKey = userId ?? 'anonymous';
+  const userKey = isDemo && demoId ? demoUserKey(demoId) : (userId ?? 'anonymous');
+
   const payload = await req.json().catch(() => null);
   const parsed = actionSchema.safeParse(payload);
   if (!parsed.success) {
@@ -320,7 +304,10 @@ export async function PATCH(req: Request) {
     );
   }
 
-  const state = await withLiveUberState(await loadDeliveryManagementState(userKey), userKey);
+  const state = isDemo
+    ? await loadDeliveryManagementState(userKey)
+    : await withLiveUberState(await loadDeliveryManagementState(userKey), userKey);
+
   const action = parsed.data;
 
   if (action.type === 'set_onboarding_step') {
@@ -359,7 +346,7 @@ export async function PATCH(req: Request) {
     state.onboarding.checklist.authorizationCompleted = allAuthorized;
     if (allAuthorized) state.onboarding.step = 'sync';
   } else if (action.type === 'disconnect_platform') {
-    if (action.platformKey === 'ubereats') {
+    if (!isDemo && action.platformKey === 'ubereats') {
       clearUberEatsConnectionState(userKey);
     }
     state.onboarding.selectedPlatforms = state.onboarding.selectedPlatforms.filter(
@@ -487,6 +474,14 @@ export async function PATCH(req: Request) {
 
   state.platforms = recalcPlatformQueues(state);
   const next = await saveDeliveryManagementState(userKey, state);
+
+  if (isDemo) {
+    return NextResponse.json({
+      ...next,
+      platforms: recalcPlatformQueues(next),
+    });
+  }
+
   const events = await listUberEatsWebhookEvents(20);
   const withEvents = mergeWebhookOrders(mergeWebhookPreview(next, events), events);
   const withQueriedOrders = await mergeOrderQueryOrders(userKey, withEvents);

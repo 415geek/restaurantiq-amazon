@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { z } from 'zod';
 import { applyDeliveryOrderAction } from '@/lib/server/delivery-order-actions';
+import { loadDeliveryManagementState, saveDeliveryManagementState } from '@/lib/server/delivery-management-store';
+import { getDemoIdFromRequest, demoUserKey } from '@/lib/server/demo-session';
 
 export const runtime = 'nodejs';
 
@@ -27,8 +29,33 @@ export async function POST(
     );
   }
 
+  const demoId = getDemoIdFromRequest({ headers: req.headers });
+  const isDemo = Boolean(demoId);
+
   const { userId } = await auth();
-  const userKey = userId ?? 'anonymous';
+  const userKey = isDemo && demoId ? demoUserKey(demoId) : (userId ?? 'anonymous');
+
+  if (isDemo) {
+    const state = await loadDeliveryManagementState(userKey);
+    const nextOrders = state.orders.map((order) =>
+      order.id === decodedOrderId ? { ...order, status: parsed.data.status } : order
+    );
+    const nextState = await saveDeliveryManagementState(userKey, {
+      ...state,
+      updatedAt: new Date().toISOString(),
+      orders: nextOrders,
+    });
+    const updated = nextState.orders.find((order) => order.id === decodedOrderId);
+
+    return NextResponse.json({
+      ok: true,
+      message: 'Demo mode: order status updated locally.',
+      warning: 'Demo mode: no real platform update was sent.',
+      order: updated,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   const result = await applyDeliveryOrderAction({
     userKey,
     orderId: decodedOrderId,

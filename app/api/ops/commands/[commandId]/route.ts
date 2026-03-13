@@ -11,6 +11,7 @@ import {
   loadDeliveryManagementState,
   saveDeliveryManagementState,
 } from '@/lib/server/delivery-management-store';
+import { getDemoIdFromRequest, demoUserKey } from '@/lib/server/demo-session';
 
 export const runtime = 'nodejs';
 
@@ -23,19 +24,24 @@ const actionSchema = z.object({
   force: z.boolean().optional(),
 });
 
-function getUserContext(userId: string | null) {
+function getUserContext(userId: string | null, overrideUserKey?: string | null) {
+  const userKey = overrideUserKey ?? (userId ?? 'anonymous');
   return {
-    userKey: userId ?? 'anonymous',
-    actorId: userId ?? 'anonymous',
+    userKey,
+    actorId: userKey,
   };
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ commandId: string }> }
 ) {
+  const demoId = getDemoIdFromRequest({ headers: req.headers });
+  const isDemo = Boolean(demoId);
+
   const { userId } = await auth();
-  const { userKey } = getUserContext(userId);
+  const { userKey } = getUserContext(userId, isDemo && demoId ? demoUserKey(demoId) : null);
+
   const [state, deliveryState] = await Promise.all([
     loadOpsCopilotState(userKey),
     loadDeliveryManagementState(userKey),
@@ -56,7 +62,11 @@ export async function GET(
   if (!command) {
     return NextResponse.json({ error: 'not_found' }, { status: 404 });
   }
-  return NextResponse.json({ command, updatedAt: retryProcessed.opsState.updatedAt });
+  return NextResponse.json({
+    command,
+    updatedAt: retryProcessed.opsState.updatedAt,
+    warning: isDemo ? 'Demo mode: execution is simulated and data is mock.' : undefined,
+  });
 }
 
 export async function PATCH(
@@ -69,8 +79,11 @@ export async function PATCH(
     return NextResponse.json({ error: 'invalid_ops_command_action_payload' }, { status: 400 });
   }
 
+  const demoId = getDemoIdFromRequest({ headers: req.headers });
+  const isDemo = Boolean(demoId);
+
   const { userId } = await auth();
-  const { userKey, actorId } = getUserContext(userId);
+  const { userKey, actorId } = getUserContext(userId, isDemo && demoId ? demoUserKey(demoId) : null);
   const { commandId } = await params;
   const opsState = await loadOpsCopilotState(userKey);
   const deliveryState = await loadDeliveryManagementState(userKey);
@@ -98,6 +111,7 @@ export async function PATCH(
     return NextResponse.json({
       command: result.command,
       updatedAt: result.opsState.updatedAt,
+      warning: isDemo ? 'Demo mode: execution is simulated and data is mock.' : undefined,
     });
   } catch (error) {
     return NextResponse.json(
