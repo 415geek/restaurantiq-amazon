@@ -154,7 +154,7 @@ export async function generateDailyBriefing(
     return {
       source: 'fallback',
       result: fallback,
-      warning: 'OpenAI daily briefing generation failed. Using deterministic summary.',
+      warning: 'AI daily briefing is unavailable. Showing deterministic summary.',
     };
   }
 
@@ -166,4 +166,3 @@ export async function generateDailyBriefing(
     },
   };
 }
-
