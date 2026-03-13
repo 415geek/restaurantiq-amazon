@@ -398,6 +398,219 @@ export function MenuManagementClient() {
     }
   };
 
+  const syncDraftIntoResponse = (nextDraft: DeliveryStoreOperationsState) => {
+    setStoreOpsResponse((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        selectedStoreId: nextDraft.storeId,
+        storeOps: prev.storeOps.map((store) => (store.storeId === nextDraft.storeId ? nextDraft : store)),
+      };
+    });
+  };
+
+  const updateDraft = (patch: Partial<DeliveryStoreOperationsState>) => {
+    setStoreOpsDraft((prev) => {
+      if (!prev) return prev;
+      const nextDraft: DeliveryStoreOperationsState = {
+        ...prev,
+        ...patch,
+        syncSource: 'local',
+      };
+      syncDraftIntoResponse(nextDraft);
+      return nextDraft;
+    });
+  };
+
+  const updateRegularHours = (weekday: DeliveryWeekday, slots: DeliveryTimeRange[]) => {
+    if (!storeOpsDraft) return;
+    updateDraft({
+      regularHours: {
+        ...storeOpsDraft.regularHours,
+        [weekday]: slots,
+      },
+    });
+  };
+
+  const addWeekdaySlot = (weekday: DeliveryWeekday) => {
+    const existing = storeOpsDraft?.regularHours[weekday] || [];
+    updateRegularHours(weekday, [...existing, { startTime: '11:00', endTime: '21:00' }]);
+  };
+
+  const updateWeekdaySlot = (
+    weekday: DeliveryWeekday,
+    slotIndex: number,
+    key: keyof DeliveryTimeRange,
+    value: string
+  ) => {
+    const existing = storeOpsDraft?.regularHours[weekday] || [];
+    updateRegularHours(
+      weekday,
+      existing.map((slot, index) => (index === slotIndex ? { ...slot, [key]: value } : slot))
+    );
+  };
+
+  const removeWeekdaySlot = (weekday: DeliveryWeekday, slotIndex: number) => {
+    const existing = storeOpsDraft?.regularHours[weekday] || [];
+    updateRegularHours(
+      weekday,
+      existing.filter((_, index) => index !== slotIndex)
+    );
+  };
+
+  const appendHolidayRow = () => {
+    if (!storeOpsDraft) return;
+    updateDraft({
+      holidayHours: [
+        ...storeOpsDraft.holidayHours,
+        {
+          id: `holiday-${Date.now()}`,
+          date: new Date().toISOString().slice(0, 10),
+          startTime: '11:00',
+          endTime: '21:00',
+          closed: false,
+        },
+      ],
+    });
+  };
+
+  const updateHolidayRow = (rowIndex: number, patch: Partial<DeliveryHolidayHoursEntry>) => {
+    if (!storeOpsDraft) return;
+    updateDraft({
+      holidayHours: storeOpsDraft.holidayHours.map((row, index) =>
+        index === rowIndex ? { ...row, ...patch } : row
+      ),
+    });
+  };
+
+  const removeHolidayRow = (rowIndex: number) => {
+    if (!storeOpsDraft) return;
+    updateDraft({
+      holidayHours: storeOpsDraft.holidayHours.filter((_, index) => index !== rowIndex),
+    });
+  };
+
+  const appendPromotionRow = () => {
+    if (!storeOpsDraft) return;
+    const baseDate = new Date().toISOString().slice(0, 10);
+    updateDraft({
+      promotions: [
+        ...storeOpsDraft.promotions,
+        {
+          id: `promo-${Date.now()}`,
+          name: '',
+          type: 'percentage',
+          value: 10,
+          enabled: false,
+          startAt: `${baseDate}T11:00:00`,
+          endAt: `${baseDate}T14:00:00`,
+          target: 'store',
+          targetIds: [storeOpsDraft.storeId],
+          syncStatus: 'idle',
+        },
+      ],
+    });
+  };
+
+  const updatePromotionRow = (promotionIndex: number, patch: Partial<DeliveryPromotionDraft>) => {
+    if (!storeOpsDraft) return;
+    updateDraft({
+      promotions: storeOpsDraft.promotions.map((promotion, index) =>
+        index === promotionIndex
+          ? {
+              ...promotion,
+              ...patch,
+              syncStatus: patch.syncStatus ?? 'idle',
+            }
+          : promotion
+      ),
+    });
+  };
+
+  const removePromotionRow = (promotionIndex: number) => {
+    if (!storeOpsDraft) return;
+    updateDraft({
+      promotions: storeOpsDraft.promotions.filter((_, index) => index !== promotionIndex),
+    });
+  };
+
+  const handleStoreOpsAction = async (
+    action:
+      | { type: 'pull_live'; storeId: string }
+      | {
+          type: 'save_local';
+          storeId: string;
+          onlineStatus: DeliveryStoreOperationsState['onlineStatus'];
+          prepTimeOffsetMins: number;
+          defaultPrepTimeMins: number;
+          regularHours: DeliveryStoreOperationsState['regularHours'];
+          holidayHours: DeliveryStoreOperationsState['holidayHours'];
+          promotions: DeliveryStoreOperationsState['promotions'];
+        }
+      | { type: 'push_live'; storeId: string },
+    successMessage?: string
+  ) => {
+    setStoreOpsSaving(true);
+    try {
+      const res = await fetch('/api/delivery/store-ops', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(action),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const details = Array.isArray(payload?.details) ? payload.details.join(' | ') : '';
+        throw new Error(`${payload?.error || 'store_ops_action_failed'}${details ? `: ${details}` : ''}`);
+      }
+
+      if (Array.isArray(payload?.warnings)) {
+        setStoreOpsPushMessages(payload.warnings);
+      } else {
+        setStoreOpsPushMessages([]);
+      }
+
+      await loadStoreOps({ storeId: action.storeId });
+      if (successMessage) toast.success(successMessage);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'store_ops_action_failed');
+    } finally {
+      setStoreOpsSaving(false);
+    }
+  };
+
+  const pullStoreOpsLive = async () => {
+    if (!storeOpsDraft) return;
+    await handleStoreOpsAction(
+      { type: 'pull_live', storeId: storeOpsDraft.storeId },
+      lang === 'zh' ? '已从 Uber 拉取最新配置' : 'Live store settings pulled from Uber'
+    );
+  };
+
+  const saveStoreOpsLocal = async () => {
+    if (!storeOpsDraft) return;
+    await handleStoreOpsAction(
+      {
+        type: 'save_local',
+        storeId: storeOpsDraft.storeId,
+        onlineStatus: storeOpsDraft.onlineStatus,
+        prepTimeOffsetMins: storeOpsDraft.prepTimeOffsetMins,
+        defaultPrepTimeMins: storeOpsDraft.defaultPrepTimeMins,
+        regularHours: storeOpsDraft.regularHours,
+        holidayHours: storeOpsDraft.holidayHours,
+        promotions: storeOpsDraft.promotions,
+      },
+      lang === 'zh' ? '门店运营配置已保存' : 'Store operations saved locally'
+    );
+  };
+
+  const pushStoreOpsLive = async () => {
+    if (!storeOpsDraft) return;
+    await handleStoreOpsAction(
+      { type: 'push_live', storeId: storeOpsDraft.storeId },
+      lang === 'zh' ? '已提交到 Uber 同步' : 'Store operations pushed to Uber'
+    );
+  };
+
   const connectedPlatformKeys = useMemo(
     () => new Set((state?.platforms ?? []).filter((platform) => platform.status === 'connected').map((p) => p.key)),
     [state]
@@ -464,10 +677,10 @@ export function MenuManagementClient() {
             {storeOpsDraft ? (
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <Badge className="border-zinc-700 bg-zinc-950/70 text-zinc-300">
-                  {copy.storeOpsLastPulled}: {formatTimestamp(storeOpsDraft.lastPulledAt)}
+                  {copy.storeOpsLastPulled}: {formatTimestamp(storeOpsDraft.lastPulledAt, lang)}
                 </Badge>
                 <Badge className="border-zinc-700 bg-zinc-950/70 text-zinc-300">
-                  {copy.storeOpsLastPushed}: {formatTimestamp(storeOpsDraft.lastPushedAt)}
+                  {copy.storeOpsLastPushed}: {formatTimestamp(storeOpsDraft.lastPushedAt, lang)}
                 </Badge>
                 <Badge
                   className={
@@ -916,7 +1129,7 @@ export function MenuManagementClient() {
   );
 }
 
-function formatTimestamp(value?: string) {
+function formatTimestamp(value: string | undefined, lang: 'zh' | 'en') {
   if (!value) return '--';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
