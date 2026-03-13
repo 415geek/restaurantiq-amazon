@@ -19,16 +19,28 @@ export async function POST(request: Request) {
       ? globalThis.crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-    // Store lead + consent (server-side only)
-    const sb = supabaseAdmin();
-    await sb.from('demo_leads').insert({
-      name: data.name,
-      email: data.email,
-      consent: data.consent,
-      source: 'hackathon_demo',
-      user_agent: request.headers.get('user-agent') ?? null,
-      referrer: request.headers.get('referer') ?? null,
-    });
+    // Lead capture is best-effort. Demo entry must still succeed if Supabase is
+    // unavailable or the demo_leads table is not ready yet.
+    try {
+      const sb = supabaseAdmin();
+      const { error } = await sb.from('demo_leads').insert({
+        name: data.name,
+        email: data.email,
+        consent: data.consent,
+        source: 'hackathon_demo',
+        user_agent: request.headers.get('user-agent') ?? null,
+        referrer: request.headers.get('referer') ?? null,
+      });
+
+      if (error) {
+        console.warn('[demo-request] lead capture skipped:', error.message);
+      }
+    } catch (leadCaptureError) {
+      console.warn(
+        '[demo-request] lead capture unavailable:',
+        leadCaptureError instanceof Error ? leadCaptureError.message : String(leadCaptureError),
+      );
+    }
 
     const response = NextResponse.json({
       success: true,
@@ -39,7 +51,7 @@ export async function POST(request: Request) {
       httpOnly: true,
       sameSite: 'lax',
       path: '/',
-      maxAge: 60 * 60 * 6, // 6 hours
+      maxAge: 60 * 60 * 6,
     });
 
     return response;
