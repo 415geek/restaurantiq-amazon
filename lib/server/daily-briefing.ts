@@ -1,6 +1,7 @@
 import type { AnalysisResponse, UploadedOpsDocument } from '@/lib/types';
 import { runOpenAIJsonSchema } from '@/lib/server/openai-json';
 import { DAILY_BRIEFING_SYSTEM_PROMPT } from '@/lib/server/prompt-library';
+import { generateNovaCompletion } from '@/lib/server/aws-nova-client';
 
 type DailyBriefingResult = {
   briefing: string;
@@ -12,6 +13,36 @@ type GenerateDailyBriefingInput = {
   uploadedDocuments: UploadedOpsDocument[];
   lang?: 'zh' | 'en';
 };
+
+function isDailyBriefingResult(value: unknown): value is DailyBriefingResult {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  if (typeof record.briefing !== 'string') return false;
+  if (!Array.isArray(record.highlights)) return false;
+  if (!record.highlights.every((item) => typeof item === 'string')) return false;
+  return true;
+}
+
+async function tryNovaDailyBriefing(prompt: string): Promise<DailyBriefingResult | null> {
+  try {
+    const raw = await generateNovaCompletion(prompt, {
+      model: process.env.AWS_NOVA_BRIEFING_MODEL || 'amazon.nova-pro-v1:0',
+      temperature: 0.3,
+      maxTokens: 1600,
+    });
+
+    const match = raw.match(/\{[\s\S]*\}/);
+    const parsed = JSON.parse(match ? match[0] : raw) as unknown;
+    if (!isDailyBriefingResult(parsed)) return null;
+
+    return {
+      briefing: parsed.briefing.trim(),
+      highlights: parsed.highlights.map((item) => item.trim()).filter(Boolean).slice(0, 5),
+    };
+  } catch {
+    return null;
+  }
+}
 
 function toCurrency(value: number | null | undefined) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '--';
@@ -86,13 +117,6 @@ export async function generateDailyBriefing(
   input: GenerateDailyBriefingInput
 ): Promise<{ source: 'live' | 'fallback'; result: DailyBriefingResult; warning?: string }> {
   const fallback = buildFallbackBriefing(input);
-  if (!process.env.OPENAI_API_KEY) {
-    return {
-      source: 'fallback',
-      result: fallback,
-      warning: 'OPENAI_API_KEY is missing. Using deterministic daily briefing.',
-    };
-  }
 
   const langLabel = input.lang === 'en' ? 'English' : '简体中文';
   const compactPayload = {
@@ -115,45 +139,67 @@ export async function generateDailyBriefing(
     warning: input.analysis.warning,
   };
 
-  const llmResult = await runOpenAIJsonSchema<DailyBriefingResult>({
-    model:
-      process.env.OPENAI_BRIEFING_MODEL ||
-      process.env.OPENAI_ANALYSIS_MODEL ||
-      'gpt-4o-mini',
-    temperature: 0.3,
-    maxOutputTokens: 1600,
-    schemaName: 'daily_briefing_output',
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['briefing', 'highlights'],
-      properties: {
-        briefing: {
-          type: 'string',
-          minLength: 20,
-          maxLength: 2200,
-        },
-        highlights: {
-          type: 'array',
-          minItems: 1,
-          maxItems: 5,
-          items: {
+  const prompt = [
+    DAILY_BRIEFING_SYSTEM_PROMPT.trim(),
+    `输出语言：${langLabel}`,
+    '请基于以下 JSON 生成每日简报：',
+    JSON.stringify(compactPayload),
+  ].join('\n\n');
+
+  if (process.env.OPENAI_API_KEY) {
+    const llmResult = await runOpenAIJsonSchema<DailyBriefingResult>({
+      model:
+        process.env.OPENAI_BRIEFING_MODEL ||
+        process.env.OPENAI_ANALYSIS_MODEL ||
+        'gpt-4o-mini',
+      temperature: 0.3,
+      maxOutputTokens: 1600,
+      schemaName: 'daily_briefing_output',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['briefing', 'highlights'],
+        properties: {
+          briefing: {
             type: 'string',
-            minLength: 2,
-            maxLength: 160,
+            minLength: 20,
+            maxLength: 2200,
+          },
+          highlights: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 5,
+            items: {
+              type: 'string',
+              minLength: 2,
+              maxLength: 160,
+            },
           },
         },
       },
-    },
-    prompt: [
-      DAILY_BRIEFING_SYSTEM_PROMPT.trim(),
-      `输出语言：${langLabel}`,
-      '请基于以下 JSON 生成每日简报：',
-      JSON.stringify(compactPayload),
-    ].join('\n\n'),
-  });
+      prompt,
+    });
 
-  if (!llmResult?.briefing) {
+    if (llmResult?.briefing) {
+      return {
+        source: 'live',
+        result: {
+          briefing: llmResult.briefing.trim(),
+          highlights: llmResult.highlights?.length ? llmResult.highlights : fallback.highlights,
+        },
+      };
+    }
+
+    // If OpenAI is configured but fails, try Nova before falling back.
+    const nova = await tryNovaDailyBriefing(prompt);
+    if (nova) {
+      return {
+        source: 'live',
+        result: nova,
+        warning: 'Using AWS Nova for daily briefing (OpenAI unavailable).',
+      };
+    }
+
     return {
       source: 'fallback',
       result: fallback,
@@ -161,11 +207,19 @@ export async function generateDailyBriefing(
     };
   }
 
+  // No OpenAI key — try Nova.
+  const nova = await tryNovaDailyBriefing(prompt);
+  if (nova) {
+    return {
+      source: 'live',
+      result: nova,
+      warning: 'Using AWS Nova for daily briefing.',
+    };
+  }
+
   return {
-    source: 'live',
-    result: {
-      briefing: llmResult.briefing.trim(),
-      highlights: llmResult.highlights?.length ? llmResult.highlights : fallback.highlights,
-    },
+    source: 'fallback',
+    result: fallback,
+    warning: 'AI daily briefing is unavailable. Showing deterministic summary.',
   };
 }
