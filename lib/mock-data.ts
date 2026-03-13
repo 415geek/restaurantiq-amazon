@@ -13,6 +13,16 @@ import type {
   SocialMentionPost,
 } from '@/lib/types';
 
+function tomorrowLabel() {
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const month = tomorrow.getMonth() + 1;
+  const day = tomorrow.getDate();
+  return {
+    zh: `${month}月${day}日`,
+    en: tomorrow.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+  };
+}
+
 export const dashboardMetrics: AgentMetric[] = [
   { id: 'total-revenue', title: '总营收', titleEn: 'Total Revenue', value: '$197.9K', trend: '↑ +111% vs Jul', trendDirection: 'up', subtitle: '6个月累计 · 峰值 10月', tone: 'good' },
   { id: 'avg-order-value', title: '平均客单价', titleEn: 'Avg Order Value', value: '$46.58', trend: '→ 稳定', trendDirection: 'flat', subtitle: '行业基准 $50', tone: 'good' },
@@ -29,77 +39,106 @@ export const agentSignals: AgentSignal[] = [
 export const recommendationsMock: Recommendation[] = [
   {
     id: 'rec-1',
-    title: 'Rainy-day delivery combo push (5pm-9pm)',
-    title_zh: '雨天外卖套餐加推（17:00-21:00）',
-    description: 'Enable a bundled combo on delivery platforms and boost visibility during the rain alert window to capture demand spike.',
+    title: 'Auto-reply new Google Reviews (draft + 1-click send)',
+    title_zh: '自动回复 Google 评论（AI 草拟 + 一键发送）',
+    description:
+      'When new Google Reviews arrive, generate an on-brand reply draft with an LLM and send it automatically after a single approval step.',
     impact_score: 9,
     urgency_level: 'high',
     feasibility_score: 8,
-    category: 'marketing',
-    execution_params: { channels: ['doordash', 'ubereats'], campaign: 'rain_combo', discount_pct: 10, timeWindow: '17:00-21:00' },
-    expected_outcome: 'Increase delivery conversion by 8-15% during weather event.',
+    category: 'reviews',
+    execution_params: {
+      action: 'auto_reply_google_reviews',
+      platform: 'google',
+      mode: 'draft_then_send',
+      tone: 'friendly_professional',
+    },
+    expected_outcome: 'Reduce response time, improve review sentiment, and increase local conversion.',
     rollback_available: true,
-    risk_level: 'low',
-    confidence: 86,
+    risk_level: 'medium',
+    confidence: 84,
     why: {
-      finding: 'Demand is likely to shift toward delivery during the rain alert window.',
-      finding_zh: '雨天预警窗口会明显把需求推向外卖。',
-      data_evidence: 'Weather trigger is active and prior social demand signals indicate higher delivery intent.',
-      data_evidence_zh: '天气触发已出现，历史社媒与需求信号显示外卖意图上升。',
-      benchmark: 'Restaurants with time-boxed weather promos usually capture demand more efficiently than all-day discounting.',
-      benchmark_zh: '与全天打折相比，限时天气促销通常能更高效地捕捉需求。'
+      finding: 'A new negative review can shape buyer perception within hours.',
+      finding_zh: '新的差评通常会在数小时内影响潜在顾客决策。',
+      data_evidence:
+        'Recent review volume is stable but response latency is inconsistent across the last 2 weeks.',
+      data_evidence_zh: '近两周评论量稳定，但回复延迟波动较大。',
+      benchmark:
+        'Restaurants that respond within 24 hours see higher trust and improved local ranking signals.',
+      benchmark_zh: '在 24 小时内回复的商家，通常能提升信任度并改善本地排名信号。',
     },
     impact: {
-      benefit: 'Capture more delivery traffic without broad discount expansion.',
-      benefit_zh: '在不扩大整体折扣的情况下，抓住更多外卖流量。',
-      financial: 'Lift dinner-period conversion and protect contribution margin.',
-      financial_zh: '提升晚餐时段转化，同时保护贡献利润。',
-      timeline: 'Within the same weather event window.',
-      timeline_zh: '在本次天气窗口内即可见效。'
+      benefit: 'Keep public feedback loops healthy with minimal manager time.',
+      benefit_zh: '用更少的管理时间维护公开口碑反馈。',
+      financial:
+        'Protect rating trajectory and reduce churn from unresolved negative experiences.',
+      financial_zh: '稳定评分走势，降低因负面体验未处理导致的流失。',
+      timeline: 'Within 1-3 days after consistent replies.',
+      timeline_zh: '持续回复后 1-3 天可看到趋势改善。',
     },
-    steps: ['Enable the combo on major delivery channels', 'Boost placement during the weather window', 'Monitor order mix and conversion hourly'],
-    steps_zh: ['在主要外卖平台上线套餐', '在天气窗口内提升活动曝光', '按小时监控订单结构与转化'],
-    stop_loss: 'Stop if discount-driven orders cannibalize full-price orders for two consecutive hours.',
-    stop_loss_zh: '如果连续两个小时出现高折扣订单明显挤占原价订单，则立即停止。',
-    rollback: 'Disable the temporary promo and restore the default menu visibility.',
-    rollback_zh: '关闭临时促销并恢复默认菜单展示。'
+    steps: [
+      'Detect new reviews (polling/webhook)',
+      'Generate reply draft using LLM with brand guidelines',
+      'Approve and send reply to Google Reviews',
+    ],
+    steps_zh: ['检测新评论（轮询/回调）', '按品牌语气用大模型生成回复草稿', '确认后一键发送回复'],
+    stop_loss:
+      'Switch to draft-only mode if the model produces replies that are too generic or inaccurate.',
+    stop_loss_zh: '若模型回复过于模板化或信息不准确，切换为仅草拟不自动发送。',
+    rollback: 'Disable auto-send and keep AI replies as drafts only.',
+    rollback_zh: '关闭自动发送，仅保留 AI 草稿。',
   },
   {
     id: 'rec-2',
-    title: 'Pause underperforming lunch ad set',
-    title_zh: '暂停低效午市广告组',
-    description: 'Lunch campaign CPA increased after CTR dropped. Pause low-performing creative and reallocate budget to top-performing audience.',
-    impact_score: 7,
-    urgency_level: 'medium',
-    feasibility_score: 9,
-    category: 'marketing',
-    execution_params: { action: 'pause_ad_set', provider: 'meta', adSetId: 'ad_42', reallocateTo: 'ad_17' },
-    expected_outcome: 'Reduce wasted spend by $120-$180/day.',
+    title: `Raise delivery prices +10% for Super Bowl Day tomorrow (${tomorrowLabel().en}) due to rain forecast`,
+    title_zh: `根据天气预报：明天（${tomorrowLabel().zh}）是 Super Bowl Day 且将下雨，建议外卖平台统一加价 10%`,
+    description:
+      'Rain + major sports event typically boosts delivery demand. Apply a temporary +10% delivery-channel price uplift to protect margins during the surge window.',
+    impact_score: 8,
+    urgency_level: 'high',
+    feasibility_score: 7,
+    category: 'pricing',
+    execution_params: {
+      action: 'bulk_delivery_markup',
+      delta_pct: 10,
+      channels: ['ubereats', 'doordash', 'grubhub', 'fantuan', 'hungrypanda'],
+      reason: 'superbowl_rain_demand_surge',
+      durationHours: 24,
+    },
+    expected_outcome:
+      'Increase contribution margin while maintaining delivery conversion during peak demand.',
     rollback_available: true,
-    risk_level: 'medium',
-    confidence: 78,
+    risk_level: 'high',
+    confidence: 76,
     why: {
-      finding: 'Lunch ad efficiency deteriorated while CPA rose.',
-      finding_zh: '午市广告效率下降，获客成本持续上升。',
-      data_evidence: 'CTR is down while conversion quality has not improved.',
-      data_evidence_zh: '点击率下降，但转化质量没有同步改善。',
-      benchmark: 'Healthy ad sets should maintain stable CTR and CPA together.',
-      benchmark_zh: '健康广告组应同时维持稳定 CTR 和 CPA。'
+      finding:
+        'Weather + event-driven demand increases willingness-to-pay for delivery convenience.',
+      finding_zh: '天气 + 事件驱动会提高用户为外卖便利性支付溢价的意愿。',
+      data_evidence:
+        'Macro signal indicates rain tomorrow; historical delivery mix rises under similar conditions.',
+      data_evidence_zh: '宏观信号显示明日降雨；类似条件下历史外卖占比会上升。',
+      benchmark:
+        'Short, time-boxed delivery markups are safer than permanent menu price changes.',
+      benchmark_zh: '限时外卖加价通常比永久性全菜单涨价更安全。',
     },
     impact: {
-      benefit: 'Remove low-efficiency spend and preserve budget for stronger audiences.',
-      benefit_zh: '剔除低效投放，把预算留给高表现人群。',
-      financial: 'Reduce wasted media cost by roughly $120-$180/day.',
-      financial_zh: '预计每天减少约 $120-$180 的无效广告支出。',
-      timeline: '2-5 days after budget reallocation.',
-      timeline_zh: '预算重分配后 2-5 天可观察到变化。'
+      benefit: 'Protect margin when demand shifts to delivery.',
+      benefit_zh: '在需求向外卖倾斜时保护利润。',
+      financial: 'A +10% markup can offset platform fees and weather-driven labor/packaging load.',
+      financial_zh: '10% 加价可对冲平台抽成与雨天人力/打包压力。',
+      timeline: 'Same day (peak window).',
+      timeline_zh: '当天（高峰窗口）即可见效。',
     },
-    steps: ['Pause the lowest-ROI ad set', 'Shift budget to the highest-converting audience', 'Review CPA daily for one week'],
-    steps_zh: ['暂停 ROI 最低的广告组', '将预算转移到转化率最高的人群', '连续一周每日复核 CPA'],
-    stop_loss: 'Restore the ad set if lead volume falls more than 15% for three days.',
-    stop_loss_zh: '若线索量连续 3 天下降超过 15%，恢复该广告组。',
-    rollback: 'Re-enable the paused ad set and restore the prior spend distribution.',
-    rollback_zh: '重新开启已暂停广告组，并恢复原预算分配。'
+    steps: [
+      'Apply +10% markup across delivery platforms',
+      'Monitor conversion rate and cancellations hourly',
+      'Rollback if cancellation rate spikes',
+    ],
+    steps_zh: ['外卖平台统一加价 10%', '按小时监控转化率与取消率', '若取消率明显上升则回滚'],
+    stop_loss: 'Rollback if cancellations increase >3% absolute vs baseline.',
+    stop_loss_zh: '若取消率较基线绝对值上升超过 3%，立即回滚。',
+    rollback: 'Restore previous delivery prices across all affected channels.',
+    rollback_zh: '恢复所有受影响外卖渠道的原价格。',
   },
   {
     id: 'rec-3',
@@ -222,8 +261,8 @@ export const analysisSummaryMock: AnalysisResponse['summary'] = {
 };
 
 export const executionLogsMock: ExecutionLog[] = [
-  { id: 'log-1', recommendationTitle: 'Rainy-day delivery combo push', status: 'completed', timestamp: new Date(Date.now() - 1000 * 60 * 28).toISOString(), detail: 'Campaign published to DoorDash & UberEats. Rollback window expired.' },
-  { id: 'log-2', recommendationTitle: 'Pause underperforming lunch ad set', status: 'rolled_back', timestamp: new Date(Date.now() - 1000 * 60 * 52).toISOString(), detail: 'Paused ad set, then rolled back after manager review.' },
+  { id: 'log-1', recommendationTitle: 'Auto-reply new Google Reviews', status: 'completed', timestamp: new Date(Date.now() - 1000 * 60 * 28).toISOString(), detail: 'Generated draft reply for 3 new reviews and queued for manager approval.' },
+  { id: 'log-2', recommendationTitle: 'Raise delivery prices +10% for Super Bowl Day', status: 'rolled_back', timestamp: new Date(Date.now() - 1000 * 60 * 52).toISOString(), detail: 'Applied +10% markup then rolled back after conversion dipped.' },
   { id: 'log-3', recommendationTitle: 'Packaging QA checklist broadcast', status: 'executing', timestamp: new Date(Date.now() - 1000 * 60 * 2).toISOString(), detail: 'Task broadcast sent. Waiting for manager acknowledgement.' },
 ];
 
