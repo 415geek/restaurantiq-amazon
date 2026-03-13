@@ -204,7 +204,7 @@ const contentByLang = {
       toggleAria: 'Toggle language',
     },
     hero: {
-      title: "The next frontier of restaurant AI isn't insights — it's execution.",
+      title: 'The Next Frontier of Restaurant AI: Execution.',
       subtitle:
         'More than analytics dashboards, Restaurant IQ turns signals into recommendations and safe execution. Built for restaurant operators across North America, from independent stores to multi-location teams.',
       ctaPrimary: 'Start Free Trial',
@@ -371,7 +371,7 @@ function BookDemoModal({
 
 export default function HomePage() {
   const [isDemoModalOpen, setIsDemoModalOpen] = useState(false);
-  const [language, setLanguage] = useState<Language>('zh');
+  const [language, setLanguage] = useState<Language>('en');
   const [lightboxImage, setLightboxImage] = useState<{ src: string; alt: string } | null>(null);
   const copy = contentByLang[language];
 
