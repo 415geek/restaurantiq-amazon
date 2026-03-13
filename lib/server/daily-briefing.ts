@@ -116,7 +116,10 @@ export async function generateDailyBriefing(
   };
 
   const llmResult = await runOpenAIJsonSchema<DailyBriefingResult>({
-    model: process.env.OPENAI_ANALYSIS_MODEL || 'gpt-5-mini',
+    model:
+      process.env.OPENAI_BRIEFING_MODEL ||
+      process.env.OPENAI_ANALYSIS_MODEL ||
+      'gpt-4o-mini',
     temperature: 0.3,
     maxOutputTokens: 1600,
     schemaName: 'daily_briefing_output',
@@ -127,7 +130,7 @@ export async function generateDailyBriefing(
       properties: {
         briefing: {
           type: 'string',
-          minLength: 60,
+          minLength: 20,
           maxLength: 2200,
         },
         highlights: {
