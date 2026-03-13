@@ -176,12 +176,12 @@ const contentByLang = {
     modal: {
       title: 'Amazon Nova AI Hackathon Demo',
       subtitle:
-        'Enter your name and email to get the latest updates and access the demo dashboard immediately.',
+        'Enter your name and email to receive the latest updates and unlock the full demo immediately.',
       placeholders: {
         name: 'Your name',
         email: 'Email address',
       },
-      consentPrefix: 'I have read and agree to',
+      consentPrefix: 'I have read and agree to the',
       consentLink: 'Privacy Notice (California)',
       submit: '开始使用',
       submitting: 'Starting...',
@@ -199,7 +199,7 @@ const contentByLang = {
       termsSubtitle: 'Summary of how we collect and use your information for this demo.',
       termsBody: [
         'What we collect: name and email address you provide for demo access; basic usage telemetry (pages viewed, clicks, and time on page) for product analytics.',
-        'How we use it: to provision demo access, and improve the demo experience.',
+        'How we use it: to provision demo access and improve the experience.',
         'Sharing: we do not sell your personal information. We may use service providers (e.g., hosting/analytics) to operate the demo.',
         'Retention: we keep demo lead data for a limited period necessary for evaluation and internal reporting.',
         'California rights: you may request access, deletion, or correction of your personal information. Contact: privacy@restaurantiq.ai.',
