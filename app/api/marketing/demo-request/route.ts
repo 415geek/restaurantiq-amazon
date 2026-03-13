@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { DEMO_COOKIE_NAME } from '@/lib/server/demo-session';
+import { supabaseAdmin } from '@/lib/server/supabase-admin';
 
 const schema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
   restaurantName: z.string().min(2).optional(),
+  consent: z.boolean().refine((value) => value === true, 'consent_required'),
 });
 
 export async function POST(request: Request) {
@@ -13,12 +15,20 @@ export async function POST(request: Request) {
     const body = await request.json();
     const data = schema.parse(body);
 
-    // For now we only log the lead. This endpoint also establishes a demo session.
-    console.log('Demo Request Received:', data);
-
     const demoId = globalThis.crypto?.randomUUID
       ? globalThis.crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    // Store lead + consent (server-side only)
+    const sb = supabaseAdmin();
+    await sb.from('demo_leads').insert({
+      name: data.name,
+      email: data.email,
+      consent: data.consent,
+      source: 'hackathon_demo',
+      user_agent: request.headers.get('user-agent') ?? null,
+      referrer: request.headers.get('referer') ?? null,
+    });
 
     const response = NextResponse.json({
       success: true,

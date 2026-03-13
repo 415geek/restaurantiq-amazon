@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { ClerkProvider } from '@clerk/nextjs';
 import { Toaster } from 'sonner';
+import { TelemetryClient } from '@/components/telemetry/TelemetryClient';
 
 const inter = Inter({ subsets: ['latin'] });
 const isMockMode = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
@@ -22,6 +23,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         {children}
+        <TelemetryClient />
         <Toaster richColors theme="dark" position="top-right" />
       </body>
     </html>

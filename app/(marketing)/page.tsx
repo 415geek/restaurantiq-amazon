@@ -13,6 +13,7 @@ type Language = 'zh' | 'en';
 type DemoRequestForm = {
   name: string;
   email: string;
+  consent: boolean;
 };
 
 function WorkflowStepPreview({
@@ -174,22 +175,35 @@ const contentByLang = {
     },
     modal: {
       title: 'Amazon Nova AI Hackathon Demo',
-      subtitle: 'Enter your name and email to access the complete demo system and experience all features.',
+      subtitle: '请输入姓名与邮箱以进入 Demo（我们会用于开通体验与产品优化分析）。',
       placeholders: {
-        name: 'Your name',
-        email: 'Email address',
+        name: '姓名',
+        email: '邮箱地址',
       },
-      submit: 'Enter Demo',
-      submitting: 'Entering...',
+      consentPrefix: '我已阅读并同意',
+      consentLink: '隐私条款（加州）',
+      submit: '进入 Demo',
+      submitting: '正在进入…',
       validation: {
-        required: 'Required',
-        email: 'Invalid email format',
+        required: '必填',
+        email: '邮箱格式不正确',
+        consent: '请先勾选同意隐私条款',
       },
       toast: {
-        loading: 'Entering demo...',
-        success: 'Welcome to Amazon Nova AI Hackathon Demo!',
-        error: 'Failed to enter. Please try again.',
+        loading: '正在进入 Demo…',
+        success: '欢迎进入 Amazon Nova AI Hackathon Demo！',
+        error: '进入失败，请重试。',
       },
+      termsTitle: '隐私条款（加州）',
+      termsSubtitle: '我们如何收集与使用你的信息（简要说明）。',
+      termsBody: [
+        '我们收集的信息：你提交的姓名与邮箱；以及基础使用行为数据（页面访问、按钮点击、页面停留时间）用于产品分析。',
+        '用途：用于开通 Demo 体验、在你请求跟进时联系你，以及改进 Demo 体验与产品。',
+        '共享：我们不会出售你的个人信息。为提供服务可能使用第三方服务商（如托管/分析）。',
+        '保存期限：仅在评估与内部报表所需的合理期限内保留。',
+        '加州权利：你可以请求访问、删除或更正你的个人信息。联系：privacy@restaurantiq.ai。',
+      ],
+      close: '关闭',
     },
     footer: {
       builtWith: 'Build with ❤️ in San Francisco',
@@ -279,6 +293,16 @@ const contentByLang = {
         success: 'We received your request and will contact you shortly!',
         error: 'Submission failed. Please try again.',
       },
+      termsTitle: 'Privacy Notice (California)',
+      termsSubtitle: 'Summary of how we collect and use your information for this demo.',
+      termsBody: [
+        'What we collect: name and email address you provide for demo access; basic usage telemetry (pages viewed, clicks, and time on page) for product analytics.',
+        'How we use it: to provision demo access, contact you about the product if you request follow-up, and improve the demo experience.',
+        'Sharing: we do not sell your personal information. We may use service providers (e.g., hosting/analytics) to operate the demo.',
+        'Retention: we keep demo lead data for a limited period necessary for evaluation and internal reporting.',
+        'California rights: you may request access, deletion, or correction of your personal information. Contact: privacy@restaurantiq.ai.',
+      ],
+      close: 'Close',
     },
     footer: {
       builtWith: 'Build with ❤️ in San Francisco',
@@ -313,9 +337,14 @@ function BookDemoModal({
   copy: any;
   onSubmit: (data: DemoRequestForm) => void;
 }) {
+  const [isTermsOpen, setIsTermsOpen] = useState(false);
+
   const demoRequestSchema = z.object({
     name: z.string().min(2, copy.validation.required),
     email: z.string().email(copy.validation.email),
+    consent: z
+      .boolean()
+      .refine((value) => value === true, { message: copy.validation.consent }),
   });
 
   const {
@@ -324,6 +353,7 @@ function BookDemoModal({
     formState: { errors, isSubmitting },
   } = useForm<DemoRequestForm>({
     resolver: zodResolver(demoRequestSchema),
+    defaultValues: { consent: false },
   });
 
   const onFormSubmit = async (data: DemoRequestForm) => {
@@ -360,10 +390,67 @@ function BookDemoModal({
             />
             {errors.email && <p className="text-red-500 text-xs mt-1 ml-1">{errors.email.message}</p>}
           </div>
+
+          <div className="space-y-1">
+            <label className="flex items-start gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-3">
+              <input
+                type="checkbox"
+                {...register('consent')}
+                className="mt-1 h-4 w-4 rounded border-zinc-700 bg-zinc-950 text-[#F26A36] focus:ring-[#F26A36]"
+              />
+              <span className="text-xs text-zinc-300">
+                {copy.consentPrefix}{' '}
+                <button
+                  type="button"
+                  onClick={() => setIsTermsOpen(true)}
+                  className="text-[#F26A36] underline underline-offset-2 hover:text-[#F26A36]/80"
+                >
+                  {copy.consentLink}
+                </button>
+              </span>
+            </label>
+            {errors.consent && (
+              <p className="text-red-500 text-xs mt-1 ml-1">{errors.consent.message}</p>
+            )}
+          </div>
+
           <Button type="submit" disabled={isSubmitting} className="w-full mt-2">
             {isSubmitting ? copy.submitting : copy.submit}
           </Button>
         </form>
+
+        {isTermsOpen ? (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
+            onClick={() => setIsTermsOpen(false)}
+          >
+            <div
+              className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#090a0f] p-6 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-lg font-semibold text-white">{copy.termsTitle}</p>
+                  <p className="mt-1 text-xs text-zinc-400">{copy.termsSubtitle}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsTermsOpen(false)}
+                  className="rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-xs text-zinc-200 hover:bg-black/60"
+                >
+                  {copy.close}
+                </button>
+              </div>
+              <div className="mt-4 max-h-[60vh] overflow-auto rounded-xl border border-white/10 bg-black/30 p-4 text-xs leading-6 text-zinc-200">
+                {copy.termsBody.map((line: string, idx: number) => (
+                  <p key={`${idx}-${line}`} className="mb-3 last:mb-0">
+                    {line}
+                  </p>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
       </motion.div>
     </div>
   );
@@ -418,6 +505,7 @@ export default function HomePage() {
                 body: JSON.stringify({
                   name: data.name,
                   email: data.email,
+                  consent: data.consent,
                 }),
               });
               const payload = await res.json().catch(() => ({}));

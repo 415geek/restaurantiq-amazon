@@ -13,7 +13,11 @@ const isProtectedRoute = createRouteMatcher([
   '/delivery(.*)',
   '/menu-management(.*)',
   '/billing-access(.*)',
+  '/bo(.*)',
+  '/api/bo(.*)',
 ]);
+
+const isBoHostPath = (pathname: string) => pathname.startsWith('/bo') || pathname.startsWith('/api/bo');
 
 const isMockMode = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
 const isClerkConfigured = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY);
@@ -32,8 +36,8 @@ function hasDemoCookie(cookieHeader: string | null) {
 
 const clerkHandler = clerkMiddleware(async (auth, req) => {
   if (isProtectedRoute(req)) {
-    // Demo sessions can access the dashboard without Clerk login.
-    if (hasDemoCookie(req.headers.get('cookie'))) return;
+    // Demo sessions can access the product dashboard without Clerk login (but never /bo).
+    if (!isBoHostPath(new URL(req.url).pathname) && hasDemoCookie(req.headers.get('cookie'))) return;
 
     const session = await auth();
     if (!session.userId) {
@@ -52,6 +56,16 @@ export default function middleware(req: Request, event: Event) {
   const onAgentStudioHost = isAgentStudioHost(host);
   const isAgentStudioPath = url.pathname.startsWith('/agent-management');
   const isAgentStudioApi = url.pathname.startsWith('/api/agent-management');
+
+  const onBoHost = host.startsWith('bo.');
+  if (onBoHost) {
+    // Route bo.restaurantiq.ai/* to /bo/* (excluding API/static).
+    if (!url.pathname.startsWith('/api') && !url.pathname.startsWith('/_next') && !url.pathname.includes('.')) {
+      const nextUrl = new URL(req.url);
+      nextUrl.pathname = url.pathname === '/' ? '/bo' : `/bo${url.pathname}`;
+      return NextResponse.rewrite(nextUrl);
+    }
+  }
 
   if (onAgentStudioHost && (url.pathname === '/' || url.pathname === '/dashboard')) {
     return NextResponse.redirect(new URL('/agent-management', req.url));
