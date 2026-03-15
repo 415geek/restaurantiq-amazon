@@ -164,3 +164,12 @@ def get_agent_tier(agent_id: str) -> str:
         Tier string: 'fast', 'balanced', or 'powerful'
     """
     return AGENT_TIERS.get(agent_id, 'balanced')
+
+_settings_instance: Settings | None = None
+
+
+def get_settings() -> Settings:
+    global _settings_instance
+    if _settings_instance is None:
+        _settings_instance = Settings()
+    return _settings_instance
