@@ -292,9 +292,9 @@ export const defaultSettings: SettingsState = {
     blacklistCategories: 'signature dishes, alcohol',
   },
   modelRouting: {
-    simpleTaskModel: 'gpt-5-mini',
-    analysisTaskModel: 'gpt-5',
-    criticalDecisionModel: 'gpt-5',
+    simpleTaskModel: 'amazon.nova-lite-v1:0',
+    analysisTaskModel: 'amazon.nova-pro-v1:0',
+    criticalDecisionModel: 'amazon.nova-pro-v1:0',
     optimizationMode: 'quality',
     dailyTokenBudget: 120000,
   },

@@ -40,21 +40,21 @@ const TASK_ROUTING: Record<
   ops_risk_review: {
     primary: {
       provider: 'claude',
-      model: process.env.CLAUDE_OPS_REVIEW_MODEL || process.env.ANTHROPIC_MODEL || 'claude-3-7-sonnet-latest',
+      model: process.env.CLAUDE_OPS_REVIEW_MODEL || process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-latest',
     },
     fallback: {
       provider: 'openai',
-      model: process.env.OPENAI_OPS_REVIEW_MODEL || process.env.OPENAI_ANALYSIS_MODEL || 'gpt-4.1-mini',
+      model: process.env.OPENAI_OPS_REVIEW_MODEL || process.env.OPENAI_ANALYSIS_MODEL || 'gpt-4o-mini',
     },
   },
   ops_report: {
     primary: {
       provider: 'claude',
-      model: process.env.CLAUDE_OPS_REPORT_MODEL || process.env.ANTHROPIC_MODEL || 'claude-3-7-sonnet-latest',
+      model: process.env.CLAUDE_OPS_REPORT_MODEL || process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-latest',
     },
     fallback: {
       provider: 'openai',
-      model: process.env.OPENAI_OPS_REPORT_MODEL || process.env.OPENAI_ANALYSIS_MODEL || 'gpt-4.1-mini',
+      model: process.env.OPENAI_OPS_REPORT_MODEL || process.env.OPENAI_ANALYSIS_MODEL || 'gpt-4o-mini',
     },
   },
 };

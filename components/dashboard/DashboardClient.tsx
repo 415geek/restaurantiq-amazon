@@ -167,7 +167,7 @@ export function DashboardClient() {
       </Card>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {metrics.map((metric) => <AgentMetricCard key={metric.id} metric={metric} />)}
+        {metrics.map((metric) => <AgentMetricCard key={metric.id} metric={metric} lang={lang} />)}
       </div>
 
       <OperationalSnapshot snapshot={snapshot} />

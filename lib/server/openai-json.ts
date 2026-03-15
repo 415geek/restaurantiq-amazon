@@ -10,7 +10,7 @@ type RunOpenAIJsonOptions<T> = {
 };
 
 export async function runOpenAIJsonSchema<T>({
-  model = process.env.OPENAI_ANALYSIS_MODEL || 'gpt-5-mini',
+  model = process.env.OPENAI_ANALYSIS_MODEL || 'gpt-4o-mini',
   prompt,
   schemaName,
   schema,

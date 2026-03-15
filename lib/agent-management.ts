@@ -64,7 +64,7 @@ export type AgentGraph = {
 
 export const AGENT_GRAPH_STORAGE_KEY = 'restaurantiq.agent.graph.v2';
 
-export const MODEL_OPTIONS = ['gpt-4o-mini', 'gpt-4o', 'gpt-5-mini', 'gpt-5', 'o4-mini'] as const;
+export const MODEL_OPTIONS = ['gpt-4o-mini', 'gpt-4o', 'amazon.nova-lite-v1:0', 'amazon.nova-pro-v1:0', 'claude-3-5-sonnet-latest'] as const;
 
 type AgentSeed = Omit<AgentNode, 'x' | 'y'>;
 
@@ -83,7 +83,7 @@ const DEFAULT_AGENT_SEEDS: Array<AgentSeed & { x: number; y: number }> = [
       '负责清洗、解析、归类 POS / 外卖 / 排班 / 库存数据，输出结构化运营摘要、异常点和指标快照。',
     promptTemplate: 'collector_ops.j2',
     fewShotExamples: [],
-    model: 'gpt-5-mini',
+    model: 'amazon.nova-lite-v1:0',
     temperature: 0.2,
     topP: 0.9,
     maxTokens: 2400,
@@ -132,7 +132,7 @@ const DEFAULT_AGENT_SEEDS: Array<AgentSeed & { x: number; y: number }> = [
       '负责汇总 Facebook / Instagram / Google / Yelp 等社媒与评论信号，归一化互动和情绪数据。',
     promptTemplate: 'collector_social.j2',
     fewShotExamples: [],
-    model: 'gpt-5-mini',
+    model: 'amazon.nova-lite-v1:0',
     temperature: 0.2,
     topP: 0.9,
     maxTokens: 2200,
@@ -172,7 +172,7 @@ const DEFAULT_AGENT_SEEDS: Array<AgentSeed & { x: number; y: number }> = [
       '负责天气、商圈、交通、节假日、事件和区域宏观环境的结构化信号输出。',
     promptTemplate: 'collector_macro.j2',
     fewShotExamples: [],
-    model: 'gpt-5-mini',
+    model: 'amazon.nova-lite-v1:0',
     temperature: 0.15,
     topP: 0.85,
     maxTokens: 2200,
@@ -311,7 +311,7 @@ const DEFAULT_AGENT_SEEDS: Array<AgentSeed & { x: number; y: number }> = [
       '负责将已验证计划中的定价动作转换为待确认执行步骤和回滚计划，不直接调用生产系统。',
     promptTemplate: 'executor.j2',
     fewShotExamples: [],
-    model: 'gpt-5-mini',
+    model: 'amazon.nova-lite-v1:0',
     temperature: 0.1,
     topP: 0.8,
     maxTokens: 1600,
@@ -341,7 +341,7 @@ const DEFAULT_AGENT_SEEDS: Array<AgentSeed & { x: number; y: number }> = [
       '负责将营销活动建议转换为平台级执行步骤和回滚计划，不直接下发生产变更。',
     promptTemplate: 'executor.j2',
     fewShotExamples: [],
-    model: 'gpt-5-mini',
+    model: 'amazon.nova-lite-v1:0',
     temperature: 0.2,
     topP: 0.85,
     maxTokens: 1600,
@@ -371,7 +371,7 @@ const DEFAULT_AGENT_SEEDS: Array<AgentSeed & { x: number; y: number }> = [
       '负责将社媒发布建议转换为内容执行步骤和回滚计划，不直接发布到生产平台。',
     promptTemplate: 'executor.j2',
     fewShotExamples: [],
-    model: 'gpt-5-mini',
+    model: 'amazon.nova-lite-v1:0',
     temperature: 0.3,
     topP: 0.9,
     maxTokens: 1600,
@@ -401,7 +401,7 @@ const DEFAULT_AGENT_SEEDS: Array<AgentSeed & { x: number; y: number }> = [
       '负责将评论回复建议转换为审核后可执行的步骤和回滚计划，不直接发送回复。',
     promptTemplate: 'executor.j2',
     fewShotExamples: [],
-    model: 'gpt-5-mini',
+    model: 'amazon.nova-lite-v1:0',
     temperature: 0.2,
     topP: 0.85,
     maxTokens: 1600,

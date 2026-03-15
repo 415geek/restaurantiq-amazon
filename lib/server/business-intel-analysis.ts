@@ -668,7 +668,7 @@ async function maybeEnrichWithOpenAI(input: {
   deterministic: ReturnType<typeof buildDeterministicPersona>;
 }): Promise<PersonaEnrichment | null> {
   return runOpenAIJsonSchema<PersonaEnrichment>({
-    model: process.env.OPENAI_ANALYSIS_MODEL || 'gpt-5-mini',
+    model: process.env.OPENAI_ANALYSIS_MODEL || 'gpt-4o-mini',
     temperature: 0.2,
     maxOutputTokens: 2600,
     prompt: [

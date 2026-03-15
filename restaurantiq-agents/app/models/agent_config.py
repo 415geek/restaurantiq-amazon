@@ -16,9 +16,9 @@ class AgentRole(str, Enum):
 
 
 class ModelTier(str, Enum):
-    FAST = 'gpt-5-mini'
-    BALANCED = 'gpt-5'
-    POWERFUL = 'gpt-5'
+    FAST = 'amazon.nova-lite-v1:0'
+    BALANCED = 'amazon.nova-pro-v1:0'
+    POWERFUL = 'amazon.nova-pro-v1:0'
 
 
 class ToolConfig(BaseModel):
