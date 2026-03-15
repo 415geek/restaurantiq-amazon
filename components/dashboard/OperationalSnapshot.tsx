@@ -21,9 +21,9 @@ const FALLBACK_MONTHLY_TREND = [
 ];
 
 const FALLBACK_PLATFORM_DISTRIBUTION = [
-  { label: 'UberEats', orders: 912, revenue: 42000, sharePct: 45 },
-  { label: 'DoorDash', orders: 714, revenue: 33600, sharePct: 35 },
-  { label: 'Dine-in', orders: 402, revenue: 19200, sharePct: 20 },
+  { label: 'UberEats', labelEn: 'UberEats', orders: 912, revenue: 42000, sharePct: 45 },
+  { label: 'DoorDash', labelEn: 'DoorDash', orders: 714, revenue: 33600, sharePct: 35 },
+  { label: 'Dine-in', labelEn: 'Dine-in', orders: 402, revenue: 19200, sharePct: 20 },
 ];
 
 export function OperationalSnapshot({ snapshot }: { snapshot: DashboardInsightSnapshot }) {
@@ -76,13 +76,13 @@ export function OperationalSnapshot({ snapshot }: { snapshot: DashboardInsightSn
                 <p className="mb-1 text-xs uppercase tracking-wide text-zinc-500">
                   {copy.dashboardInsights.healthIssue}
                 </p>
-                <p className="text-zinc-300">{snapshot.healthIssue}</p>
+                <p className="text-zinc-300">{lang === 'en' ? snapshot.healthIssueEn : snapshot.healthIssue}</p>
               </div>
               <div>
                 <p className="mb-1 text-xs uppercase tracking-wide text-zinc-500">
                   {copy.dashboardInsights.healthStrength}
                 </p>
-                <p className="text-zinc-300">{snapshot.healthStrength}</p>
+                <p className="text-zinc-300">{lang === 'en' ? snapshot.healthStrengthEn : snapshot.healthStrength}</p>
               </div>
             </div>
           </section>
@@ -189,7 +189,7 @@ export function OperationalSnapshot({ snapshot }: { snapshot: DashboardInsightSn
                 {platformDistribution.map((platform) => (
                   <div key={platform.label} className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-zinc-300">{platform.label}</span>
+                      <span className="text-zinc-300">{lang === 'en' ? (platform.labelEn ?? platform.label) : platform.label}</span>
                       <span className="text-zinc-400">{platform.sharePct.toFixed(0)}%</span>
                     </div>
                     <div className="h-2 overflow-hidden rounded-full bg-zinc-800">

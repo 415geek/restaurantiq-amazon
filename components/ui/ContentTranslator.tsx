@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Languages, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useDashboardLanguage } from '@/components/providers/DashboardLanguageProvider';
@@ -16,6 +16,8 @@ interface ContentTranslatorProps {
   size?: 'sm' | 'md';
   /** 自定义样式类名 */
   className?: string;
+  /** 当 lang='en' 时自动翻译，无需手动点击 */
+  autoTranslate?: boolean;
 }
 
 /**
@@ -39,6 +41,7 @@ export function ContentTranslator({
   contentType = 'general',
   size = 'sm',
   className = '',
+  autoTranslate = false,
 }: ContentTranslatorProps) {
   const { lang } = useDashboardLanguage();
   const [isTranslated, setIsTranslated] = useState(false);
@@ -99,6 +102,14 @@ export function ContentTranslator({
       setIsTranslating(false);
     }
   };
+
+  // Auto-translate when lang='en' and autoTranslate is enabled
+  useEffect(() => {
+    if (autoTranslate && lang === 'en' && !isTranslated && !translatedText && !isTranslating) {
+      void handleTranslate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoTranslate, lang, originalContent]);
 
   const displayContent = isTranslated && translatedText ? translatedText : originalContent;
 

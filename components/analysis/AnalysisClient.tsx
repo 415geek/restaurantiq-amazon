@@ -639,6 +639,7 @@ function BusinessIntelPanel({
                 originalContent={intel.personas.mckinsey.summary}
                 contentType="analysis"
                 size="sm"
+                autoTranslate={lang === 'en'}
               />
               {topRecommendation ? (
                 <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 text-xs text-zinc-300">
@@ -649,6 +650,7 @@ function BusinessIntelPanel({
                       originalContent={topRecommendation.expected_outcome}
                       contentType="analysis"
                       size="sm"
+                      autoTranslate={lang === 'en'}
                     />
                   </div>
                 </div>

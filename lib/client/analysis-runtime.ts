@@ -13,16 +13,35 @@ const ANALYSIS_RUNTIME_STORAGE_KEY = 'restaurant_iq_analysis_runtime_v2';
 
 export type PlatformDistributionItem = {
   label: string;
+  labelEn: string;
   orders: number;
   revenue: number;
   sharePct: number;
 };
 
+const PLATFORM_NAME_EN: Record<string, string> = {
+  '熊猫外卖': 'HungryPanda',
+  '饭团外卖': 'Fantuan',
+  '熊猫': 'HungryPanda',
+  '饭团': 'Fantuan',
+  'Uber Eats': 'Uber Eats',
+  'UberEats': 'UberEats',
+  'DoorDash': 'DoorDash',
+  'GrubHub': 'GrubHub',
+  'Grubhub': 'Grubhub',
+};
+
+function normalizePlatformLabelEn(label: string): string {
+  return PLATFORM_NAME_EN[label] ?? label;
+}
+
 export type DashboardInsightSnapshot = {
   healthScore: number;
   healthGrade: string;
   healthIssue: string;
+  healthIssueEn: string;
   healthStrength: string;
+  healthStrengthEn: string;
   monthlyTrend: AgentAMonthlyTrendPoint[];
   platformDistribution: PlatformDistributionItem[];
   warning?: string;
@@ -149,6 +168,7 @@ function derivePlatformDistribution(analysis: AnalysisResponse): PlatformDistrib
   return entries
     .map(([label, value]) => ({
       label,
+      labelEn: normalizePlatformLabelEn(label),
       orders: value.orders,
       revenue: value.revenue,
       sharePct: value.share_pct,
@@ -160,7 +180,7 @@ function derivePlatformDistribution(analysis: AnalysisResponse): PlatformDistrib
 
 function deriveHealthSnapshot(
   analysis: AnalysisResponse
-): Pick<DashboardInsightSnapshot, 'healthScore' | 'healthGrade' | 'healthIssue' | 'healthStrength'> {
+): Pick<DashboardInsightSnapshot, 'healthScore' | 'healthGrade' | 'healthIssue' | 'healthIssueEn' | 'healthStrength' | 'healthStrengthEn'> {
   const overview = analysis.agentAParsed?.overview;
   const monthlyTrend = analysis.agentAParsed?.monthly_trend ?? [];
   const baseline = monthlyTrend.length ? pickOperationalBaseline(monthlyTrend) : null;
@@ -195,17 +215,27 @@ function deriveHealthSnapshot(
     F: '危险',
   } as const;
 
+  const highDiscount = peakDiscountMonth && peakDiscountMonth.discountRate >= 10;
+  const strongGrowth = orderGrowthPct && orderGrowthPct > 30;
   return {
     healthScore: score,
     healthGrade: `${grade} · ${gradeZhMap[grade]}`,
     healthIssue:
-      peakDiscountMonth && peakDiscountMonth.discountRate >= 10
+      highDiscount
         ? `${peakDiscountMonth.monthLabel}折扣率偏高（${formatNumber(peakDiscountMonth.discountRate, 'zh', 1)}%）`
         : '暂无明显异常月度折扣风险',
+    healthIssueEn:
+      highDiscount
+        ? `Discount rate too high in ${peakDiscountMonth.monthLabelEn} (${formatNumber(peakDiscountMonth.discountRate, 'zh', 1)}%)`
+        : 'No significant discount risk detected',
     healthStrength:
-      orderGrowthPct && orderGrowthPct > 30
+      strongGrowth
         ? `客单价稳定，订单量较基准月提升 ${formatInteger(Math.round(orderGrowthPct), 'zh')}%`
         : '客单价表现稳定，营收结构健康',
+    healthStrengthEn:
+      strongGrowth
+        ? `Stable AOV with order volume up ${Math.round(orderGrowthPct)}% vs. baseline`
+        : 'Stable average order value with healthy revenue structure',
   };
 }
 
