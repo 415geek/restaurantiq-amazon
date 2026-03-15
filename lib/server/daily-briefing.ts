@@ -118,7 +118,7 @@ export async function generateDailyBriefing(
 ): Promise<{ source: 'live' | 'fallback'; result: DailyBriefingResult; warning?: string }> {
   const fallback = buildFallbackBriefing(input);
 
-  const langLabel = input.lang === 'en' ? 'English' : '简体中文';
+  const langLabel = input.lang === 'en' ? 'en' : 'zh';
   const compactPayload = {
     lang: langLabel,
     summary: input.analysis.summary,
@@ -139,10 +139,14 @@ export async function generateDailyBriefing(
     warning: input.analysis.warning,
   };
 
+  const langInstruction = input.lang === 'en'
+    ? 'IMPORTANT: Respond entirely in English. Do not use any Chinese characters.'
+    : '重要：请全部使用简体中文输出，不要夹杂英文。';
+
   const prompt = [
     DAILY_BRIEFING_SYSTEM_PROMPT.trim(),
-    `输出语言：${langLabel}`,
-    '请基于以下 JSON 生成每日简报：',
+    langInstruction,
+    'Generate the daily briefing based on the following JSON:',
     JSON.stringify(compactPayload),
   ].join('\n\n');
 

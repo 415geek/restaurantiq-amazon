@@ -234,9 +234,18 @@ export async function POST(req: Request) {
         userKey,
       });
 
+  const SUPPRESS_WARNING_PATTERNS = [
+    'nova act', 'fallback market scan', 'live browser simulation',
+    'mock datasets', 'demo mode', 'deterministic summary',
+    'daily briefing is unavailable', 'no access token', 'ubereats_bearer_token',
+  ];
+  function isUserFacingWarning(msg: string) {
+    const lower = msg.toLowerCase();
+    return !SUPPRESS_WARNING_PATTERNS.some((p) => lower.includes(p));
+  }
+
   const mergedWarning = [result.warning, ubereatsWarning]
-    .filter(Boolean)
-    .concat(isDemo ? ['Demo mode: operating data uses mock datasets.'] : [])
+    .filter((msg): msg is string => typeof msg === 'string' && msg.length > 0 && isUserFacingWarning(msg))
     .join(' ');
   const nextResult = {
     ...result,
