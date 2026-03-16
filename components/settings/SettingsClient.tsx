@@ -249,7 +249,13 @@ export function SettingsClient() {
     if (status === 'connected') {
       toast.success(`Google Business connected${connectedCount ? ` (${connectedCount})` : ''}`);
     } else {
-      toast.error(error || 'Google Business connection failed');
+      const message =
+        error === 'missing_client_id' || error === 'missing_env'
+          ? (lang === 'zh'
+              ? '请在服务器环境变量中配置 GOOGLE_BUSINESS_CLIENT_ID 和 GOOGLE_BUSINESS_CLIENT_SECRET，并重启服务。'
+              : 'Configure GOOGLE_BUSINESS_CLIENT_ID and GOOGLE_BUSINESS_CLIENT_SECRET in server env, then restart.')
+          : error || (lang === 'zh' ? 'Google Business 连接失败' : 'Google Business connection failed');
+      toast.error(message);
     }
     ['google_business_status', 'google_business_error', 'google_business_connected_count'].forEach((k) =>
       url.searchParams.delete(k)

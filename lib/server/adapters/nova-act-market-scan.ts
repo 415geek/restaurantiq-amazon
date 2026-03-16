@@ -114,6 +114,10 @@ Please provide a JSON response with the following structure:
 Generate 6-8 menu items and 2-3 campaigns. Make the data realistic and varied across platforms.
 Return ONLY the JSON, no other text.`;
 
+    const controller = new AbortController();
+    const timeoutMs = 60_000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -132,7 +136,10 @@ Return ONLY the JSON, no other text.`;
         max_tokens: 2000,
       }),
       cache: 'no-store',
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -185,12 +192,20 @@ Return ONLY the JSON, no other text.`;
       warnings: [],
     };
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown error';
+    const cause =
+      error instanceof Error && error.cause instanceof Error
+        ? error.cause.message
+        : error instanceof Error && typeof (error as unknown as { cause?: { code?: string } }).cause?.code === 'string'
+          ? (error as unknown as { cause: { code: string } }).cause.code
+          : null;
+    const detail = cause ? ` (${cause})` : '';
     return {
       source: 'fallback',
       menuItems: fallbackMenuSignals(input),
       campaigns: fallbackCampaignSignals(),
       warnings: [
-        `Amazon Nova market scan failed: ${error instanceof Error ? error.message : 'unknown error'}.`,
+        `Amazon Nova market scan failed: ${message}${detail}. Check NOVA_ACT_ENDPOINT is reachable and the backend is running.`,
       ],
     };
   }

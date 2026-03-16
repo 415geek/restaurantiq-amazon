@@ -129,15 +129,28 @@ When enabled, Nova Act collects:
 3. Add `NOVA_ACT_API_KEY` with your API key
 4. Restart the development server
 
-### Error: "Nova Act market scan failed"
+### Error: "Amazon Nova market scan failed: fetch failed"
 
-**Cause**: API endpoint is unreachable or invalid credentials
+**Cause**: The Next.js app could not reach `NOVA_ACT_ENDPOINT` (network/connection failure). Common cases:
+- Backend (Nest/PM2) not running or not listening on that URL
+- Wrong URL (e.g. `localhost` when the app runs on another host or in the cloud)
+- Firewall / security group blocking the request
+- DNS or TLS errors
 
 **Solution**:
-1. Verify `NOVA_ACT_ENDPOINT` is correct
-2. Check `NOVA_ACT_API_KEY` is valid
-3. Ensure Nova Act service is operational
-4. Check network connectivity
+1. Ensure the Nova Act backend is running (e.g. `pm2 status` for `restaurantiq-orchestrator` or the service that serves the market-scan API).
+2. Set `NOVA_ACT_ENDPOINT` to a URL reachable from where Next.js runs (use the server’s public URL or internal host, not `localhost`, when deployed).
+3. From the same environment as the app, test: `curl -X POST -H "Content-Type: application/json" -H "Authorization: Bearer YOUR_KEY" -d '{}' "$NOVA_ACT_ENDPOINT"`.
+4. Check firewall/security groups allow outbound (or internal) traffic to that host/port.
+
+### Error: "Nova Act market scan failed" (other)
+
+**Cause**: API endpoint unreachable, invalid credentials, or non-2xx response.
+
+**Solution**:
+1. Verify `NOVA_ACT_ENDPOINT` is correct and reachable (see "fetch failed" above).
+2. Check `NOVA_ACT_API_KEY` is valid.
+3. Ensure Nova Act service is operational and check network connectivity.
 
 ### Error: "Nova Act returned empty payload"
 

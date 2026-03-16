@@ -111,38 +111,35 @@ export function IntegrationStatusPanel({
                     </Button>
                   ) : null}
                   {oauthKeys.has(item.key) ? (
-                    <a
-                      href={item.key === 'googleBusiness' ? '/api/integrations/google-business/start' : `/api/integrations/meta/start?provider=${item.key}`}
-                      rel="noopener noreferrer"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        window.location.href = e.currentTarget.href;
-                      }}
-                      className={cn(
-                        'inline-flex items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F26A36]/70 h-9',
-                        item.status === 'connected'
-                          ? 'border border-transparent bg-transparent text-zinc-200 hover:bg-zinc-900/70'
-                          : 'border border-zinc-800 bg-zinc-900 text-zinc-100 hover:bg-zinc-800'
-                      )}
-                    >
-                      {lang === 'zh' ? (
-                        item.status === 'connected'
-                          ? item.key === 'googleBusiness'
-                            ? '重新连接 Google Business'
-                            : `重新连接${item.key === 'facebook' ? ' Facebook' : ' Instagram'}`
-                          : item.key === 'googleBusiness'
-                            ? '连接 Google Business'
-                            : `连接${item.key === 'facebook' ? ' Facebook' : ' Instagram'}`
-                      ) : item.status === 'connected' ? (
-                        item.key === 'googleBusiness'
-                          ? 'Reconnect Google Business'
-                          : `Reconnect ${item.key === 'facebook' ? 'Facebook' : 'Instagram'}`
-                      ) : (
-                        item.key === 'googleBusiness'
-                          ? 'Connect Google Business'
-                          : `Connect ${item.key === 'facebook' ? 'Facebook' : 'Instagram'}`
-                      )}
-                    </a>
+                    <form method="GET" action={item.key === 'googleBusiness' ? '/api/integrations/google-business/start' : `/api/integrations/meta/start?provider=${item.key}`} className="inline-block">
+                      <button
+                        type="submit"
+                        className={cn(
+                          'inline-flex items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F26A36]/70 h-9',
+                          item.status === 'connected'
+                            ? 'border border-transparent bg-transparent text-zinc-200 hover:bg-zinc-900/70'
+                            : 'border border-zinc-800 bg-zinc-900 text-zinc-100 hover:bg-zinc-800'
+                        )}
+                      >
+                        {lang === 'zh' ? (
+                          item.status === 'connected'
+                            ? item.key === 'googleBusiness'
+                              ? '重新连接 Google Business'
+                              : `重新连接${item.key === 'facebook' ? ' Facebook' : ' Instagram'}`
+                            : item.key === 'googleBusiness'
+                              ? '连接 Google Business'
+                              : `连接${item.key === 'facebook' ? ' Facebook' : ' Instagram'}`
+                        ) : item.status === 'connected' ? (
+                          item.key === 'googleBusiness'
+                            ? 'Reconnect Google Business'
+                            : `Reconnect ${item.key === 'facebook' ? 'Facebook' : 'Instagram'}`
+                        ) : (
+                          item.key === 'googleBusiness'
+                            ? 'Connect Google Business'
+                            : `Connect ${item.key === 'facebook' ? 'Facebook' : 'Instagram'}`
+                        )}
+                      </button>
+                    </form>
                   ) : null}
                   <Button variant="ghost" size="sm" onClick={() => setDocKey(item.key)}>{copy.common.viewSetup}</Button>
                 </div>
