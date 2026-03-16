@@ -22,6 +22,8 @@ ssh "${SSH_OPTS[@]}" "$SERVER_USER@$SERVER_HOST" "set -e;
   git reset --hard origin/main;
   echo '==> npm install';
   npm install;
+  echo '==> remove stale .next/lock (if any)';
+  rm -f .next/lock;
   echo '==> npm run build';
   npm run build;
   echo '==> pm2 restart $PM2_APP --update-env';
