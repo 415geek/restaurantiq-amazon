@@ -113,11 +113,11 @@ function platformRows(): DeliveryPlatformConnection[] {
     {
       key: 'ubereats',
       label: 'Uber Eats',
-      status: 'connected',
-      acceptsOrders: true,
-      queueSize: 4,
-      avgPrepMins: 17,
-      menuSyncedAt: baseTime,
+      status: 'not_connected',
+      acceptsOrders: false,
+      queueSize: 0,
+      avgPrepMins: 0,
+      menuSyncedAt: undefined,
     },
     {
       key: 'doordash',

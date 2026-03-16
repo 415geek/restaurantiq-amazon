@@ -6,6 +6,7 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { AnimatePresence, motion } from 'framer-motion';
 import { appEnv } from '@/lib/env';
 import { GlobalDeliveryOrderAlert } from '@/components/delivery/GlobalDeliveryOrderAlert';
+import { DemoModeBanner } from '@/components/layout/DemoModeBanner';
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -17,7 +18,12 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      {!isAgentStudioHost ? <GlobalDeliveryOrderAlert /> : null}
+      {!isAgentStudioHost ? (
+        <>
+          <DemoModeBanner />
+          <GlobalDeliveryOrderAlert />
+        </>
+      ) : null}
       <DashboardNavbar onMobileMenu={() => setMobileOpen(true)} />
       <div className="mx-auto flex max-w-[1600px]">
         <Sidebar agentStudioOnly={isAgentStudioHost} />

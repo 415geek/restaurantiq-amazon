@@ -1,4 +1,5 @@
 import { buildUberTokenRequestBody } from '@/lib/server/ubereats-client-assertion';
+import { getIntegrationTokens } from '@/lib/server/integration-store';
 import {
   getUberEatsConnectionState,
   upsertUberEatsConnectionState,
@@ -6,6 +7,7 @@ import {
 
 export type UberResolvedTokenSource =
   | 'oauth_connection'
+  | 'integration_store'
   | 'env_bearer_token'
   | 'client_credentials'
   | 'none';
@@ -187,20 +189,33 @@ export async function resolveUberEatsAccessToken(userKey: string): Promise<UberR
     return { token: cachedToken.token, source: cachedToken.source };
   }
 
-  // Check connection state
+  // Check connection state (ubereats-oauth-store, set by start route server-token path)
   const connection = getUberEatsConnectionState(userKey);
   const oauthToken = sanitizeToken(connection?.accessToken);
   if (oauthToken && tokenIsFresh(connection?.accessTokenExpiresAt)) {
     console.log('[Uber Eats Token] Using existing OAuth token from connection state');
-    
-    // Update global cache
     cachedToken = {
       token: oauthToken,
       expiresAt: connection?.accessTokenExpiresAt || Date.now() + 3600 * 1000,
       source: 'oauth_connection',
     };
-    
     return { token: oauthToken, source: 'oauth_connection' };
+  }
+
+  // Check integration store (OAuth tokens saved by /api/integrations/ubereats/callback)
+  const stored = await getIntegrationTokens('ubereats');
+  const storedToken = sanitizeToken(stored?.accessToken);
+  if (storedToken) {
+    const expiresAt = stored?.expiresAt ? new Date(stored.expiresAt).getTime() : undefined;
+    if (tokenIsFresh(expiresAt)) {
+      console.log('[Uber Eats Token] Using OAuth token from integration store');
+      cachedToken = {
+        token: storedToken,
+        expiresAt: expiresAt || Date.now() + 3600 * 1000,
+        source: 'integration_store',
+      };
+      return { token: storedToken, source: 'integration_store' };
+    }
   }
 
   // Check environment variable

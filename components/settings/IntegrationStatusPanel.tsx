@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import type { IntegrationStatusItem } from '@/lib/types';
 import { useDashboardLanguage } from '@/components/providers/DashboardLanguageProvider';
+import { cn } from '@/lib/utils';
 
 const docs: Record<string, string> = {
   clerk: 'Set NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY in .env.local, then restart app.',
@@ -94,7 +95,7 @@ export function IntegrationStatusPanel({
                           return;
                         }
                         if (item.key === 'ubereats') {
-                          window.location.href = '/api/integrations/ubereats/start?next=%2F';
+                          window.location.href = '/api/integrations/ubereats/start?next=%2Fsettings&force_oauth=1';
                           return;
                         }
                         window.location.href = `/api/integrations/delivery-platform/start?platform=${encodeURIComponent(item.key)}`;
@@ -110,16 +111,19 @@ export function IntegrationStatusPanel({
                     </Button>
                   ) : null}
                   {oauthKeys.has(item.key) ? (
-                    <Button
-                      variant={item.status === 'connected' ? 'ghost' : 'secondary'}
-                      size="sm"
-                      onClick={() => {
-                        if (item.key === 'googleBusiness') {
-                          window.location.href = '/api/integrations/google-business/start';
-                          return;
-                        }
-                        window.location.href = `/api/integrations/meta/start?provider=${item.key}`;
+                    <a
+                      href={item.key === 'googleBusiness' ? '/api/integrations/google-business/start' : `/api/integrations/meta/start?provider=${item.key}`}
+                      rel="noopener noreferrer"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        window.location.href = e.currentTarget.href;
                       }}
+                      className={cn(
+                        'inline-flex items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F26A36]/70 h-9',
+                        item.status === 'connected'
+                          ? 'border border-transparent bg-transparent text-zinc-200 hover:bg-zinc-900/70'
+                          : 'border border-zinc-800 bg-zinc-900 text-zinc-100 hover:bg-zinc-800'
+                      )}
                     >
                       {lang === 'zh' ? (
                         item.status === 'connected'
@@ -138,7 +142,7 @@ export function IntegrationStatusPanel({
                           ? 'Connect Google Business'
                           : `Connect ${item.key === 'facebook' ? 'Facebook' : 'Instagram'}`
                       )}
-                    </Button>
+                    </a>
                   ) : null}
                   <Button variant="ghost" size="sm" onClick={() => setDocKey(item.key)}>{copy.common.viewSetup}</Button>
                 </div>

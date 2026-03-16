@@ -12,10 +12,32 @@ export type UberEatsWebhookEventRecord = {
 
 const runtimeDir = path.join(process.cwd(), '.runtime', 'ubereats');
 const runtimeFile = path.join(runtimeDir, 'webhook-events.json');
+const webhookUserKeyFile = path.join(runtimeDir, 'webhook-user-key.json');
 const MAX_EVENTS = 300;
 
 async function ensureDir() {
   await mkdir(runtimeDir, { recursive: true });
+}
+
+/** 持久化：Webhook 订单写入哪个 userKey（Clerk userId）。可由设置页「使用当前账号接收」写入。 */
+export async function getWebhookUserKey(): Promise<string | null> {
+  try {
+    const raw = await readFile(webhookUserKeyFile, 'utf8');
+    const parsed = JSON.parse(raw) as { userKey?: string };
+    const key = typeof parsed?.userKey === 'string' ? parsed.userKey.trim() : null;
+    return key || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setWebhookUserKey(userKey: string): Promise<void> {
+  await ensureDir();
+  await writeFile(
+    webhookUserKeyFile,
+    JSON.stringify({ userKey: userKey.trim(), updatedAt: new Date().toISOString() }, null, 2),
+    'utf8'
+  );
 }
 
 async function readEvents() {

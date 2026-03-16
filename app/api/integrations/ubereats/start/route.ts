@@ -49,6 +49,7 @@ function redirectToNextPath(appUrl: string, nextPath: string, params: Record<str
 export async function GET(req: Request) {
   const reqUrl = new URL(req.url);
   const nextPath = normalizeNextPath(reqUrl.searchParams.get('next'));
+  const forceOAuth = reqUrl.searchParams.get('force_oauth') === '1';
   const { userId } = await auth();
   const userKey = userId ?? 'anonymous';
   const clientId = process.env.UBEREATS_CLIENT_ID;
@@ -92,7 +93,7 @@ export async function GET(req: Request) {
     process.env.UBEREATS_OAUTH_AUTHORIZE_SCOPES ||
     'eats.pos_provisioning';
 
-  const useServerTokenMode = Boolean(useServerTokenFlag || !clientId);
+  const useServerTokenMode = Boolean(useServerTokenFlag || !clientId) && !forceOAuth;
   if (useServerTokenMode) {
     let accessToken = serviceToken;
     let mode: 'server_token' | 'oauth' = 'server_token';

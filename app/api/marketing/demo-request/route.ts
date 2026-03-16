@@ -44,15 +44,17 @@ export async function POST(request: Request) {
 
     const response = NextResponse.json({
       success: true,
-      message: 'Demo session created',
+      message: process.env.DEMO_MODE_ENABLED === 'true' ? 'Demo session created' : 'Request received. Please sign in to access the dashboard.',
     });
 
-    response.cookies.set(DEMO_COOKIE_NAME, demoId, {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 6,
-    });
+    if (process.env.DEMO_MODE_ENABLED === 'true') {
+      response.cookies.set(DEMO_COOKIE_NAME, demoId, {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 60 * 60 * 6,
+      });
+    }
 
     return response;
   } catch (error) {

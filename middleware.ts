@@ -34,10 +34,12 @@ function hasDemoCookie(cookieHeader: string | null) {
   return cookieHeader.split(';').some((part) => part.trim().startsWith(`${DEMO_COOKIE_NAME}=`));
 }
 
+const demoModeEnabled = process.env.DEMO_MODE_ENABLED === 'true';
+
 const clerkHandler = clerkMiddleware(async (auth, req) => {
   if (isProtectedRoute(req)) {
-    // Demo sessions can access the product dashboard without Clerk login (but never /bo).
-    if (!isBoHostPath(new URL(req.url).pathname) && hasDemoCookie(req.headers.get('cookie'))) return;
+    // 仅当 DEMO_MODE_ENABLED=true 时允许 demo cookie 免登录；否则一律要求 Clerk 登录（production 模式）
+    if (demoModeEnabled && !isBoHostPath(new URL(req.url).pathname) && hasDemoCookie(req.headers.get('cookie'))) return;
 
     const session = await auth();
     if (!session.userId) {

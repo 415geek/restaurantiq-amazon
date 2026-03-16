@@ -22,6 +22,7 @@ import {
 import { listUberEatsWebhookEvents } from '@/lib/server/ubereats-webhook-store';
 import { parseUberWebhookEventsToOrders } from '@/lib/server/ubereats-order-normalizer';
 import { queryDeliveryOrders } from '@/lib/server/delivery-order-query';
+import { isIntegrationConnected } from '@/lib/server/integration-store';
 import { resolveUberEatsAccessToken } from '@/lib/server/ubereats-token';
 import { getDemoIdFromRequest, demoUserKey } from '@/lib/server/demo-session';
 
@@ -126,7 +127,8 @@ async function withLiveUberState(
 ): Promise<DeliveryManagementState> {
   const userConnection = getUberEatsConnectionState(userKey);
   const resolvedToken = await resolveUberEatsAccessToken(userKey);
-  const hasToken = Boolean(resolvedToken.token);
+  const connectedInIntegrationStore = await isIntegrationConnected('ubereats');
+  const hasToken = Boolean(resolvedToken.token) || connectedInIntegrationStore;
 
   const nextPlatforms = state.platforms.map((platform) => {
     if (platform.key !== 'ubereats') return platform;
@@ -281,16 +283,16 @@ export async function GET(req: NextRequest) {
   }
   const userKey = isDemo && demoId ? demoUserKey(demoId) : (userId ?? 'anonymous');
 
+  const state = await loadDeliveryManagementState(userKey);
+  const merged = await withLiveUberState(state, userKey);
+
   if (isDemo) {
-    const state = await loadDeliveryManagementState(userKey);
     return NextResponse.json({
-      ...state,
-      platforms: recalcPlatformQueues(state),
+      ...merged,
+      platforms: recalcPlatformQueues(merged),
     });
   }
 
-  const state = await loadDeliveryManagementState(userKey);
-  const merged = await withLiveUberState(state, userKey);
   const events = await listUberEatsWebhookEvents(20);
   const withEvents = mergeWebhookOrders(mergeWebhookPreview(merged, events), events);
   const withQueriedOrders = await mergeOrderQueryOrders(userKey, withEvents);

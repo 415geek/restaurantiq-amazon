@@ -14,7 +14,11 @@ function parseCookieHeader(header: string | null): Record<string, string> {
   return out;
 }
 
+/** 为 true 时允许 demo cookie 进入 demo 模式；未设置或非 true 时始终为 production（无 demo） */
+const DEMO_MODE_ENABLED = process.env.DEMO_MODE_ENABLED === 'true';
+
 export function getDemoIdFromRequest(req: { headers: Headers }): string | null {
+  if (!DEMO_MODE_ENABLED) return null;
   const cookies = parseCookieHeader(req.headers.get('cookie'));
   const id = cookies[DEMO_COOKIE_NAME];
   return id && id.trim() ? id.trim() : null;
