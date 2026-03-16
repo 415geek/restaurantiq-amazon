@@ -330,6 +330,16 @@ export function deriveDashboardMetrics(
   ];
 }
 
+/** 不在 Dashboard 展示 Nova market scan 连接失败类提示（含持久化数据） */
+function stripNovaMarketScanFailureWarning(text: string | undefined): string | undefined {
+  if (!text || typeof text !== 'string') return text;
+  const trimmed = text
+    .replace(/\bAmazon Nova market scan failed[^.]*\.?\s*/gi, '')
+    .replace(/\bNova Act [^.]*market scan[^.]*\.?\s*/gi, '')
+    .trim();
+  return trimmed || undefined;
+}
+
 export function deriveDashboardInsightSnapshot(
   analysis: AnalysisResponse
 ): DashboardInsightSnapshot {
@@ -344,11 +354,12 @@ export function deriveDashboardInsightSnapshot(
     return scoreRight - scoreLeft;
   })[0];
 
+  const rawWarning = analysis.warning ?? analysis.summary.riskNotice;
   return {
     ...deriveHealthSnapshot(analysis),
     monthlyTrend,
     platformDistribution: derivePlatformDistribution(analysis),
-    warning: analysis.warning ?? analysis.summary.riskNotice,
+    warning: stripNovaMarketScanFailureWarning(rawWarning),
     source: analysis.source,
     priorityRecommendation,
     recommendationStats,
