@@ -102,17 +102,25 @@ function statusToUberAction(status: DeliveryOrderStatus) {
   }
 }
 
-/** Uber Eats 官方 API 路径后缀：https://developer.uber.com/docs/eats/references/api */
+/** Uber Eats API 路径（与 restaurantiq-backend 一致）：/v1/eats/orders/:id/accept | cancel | status */
 const UBEREATS_ACTION_PATH: Record<string, string> = {
-  accept: 'accept_pos_order',
-  cancel: 'deny_pos_order',
-  start_preparing: 'start_preparing',
-  ready_for_pickup: 'ready_for_pickup',
-  complete: 'complete',
+  accept: 'accept',
+  cancel: 'cancel',
+  start_preparing: 'status',
+  ready_for_pickup: 'status',
+  complete: 'status',
 };
 
+function getUberEatsApiBase(): string {
+  const envBase = process.env.UBEREATS_API_BASE_URL?.trim();
+  if (envBase) return envBase.replace(/\/$/, '');
+  const env = process.env.UBEREATS_ENVIRONMENT?.toLowerCase();
+  if (env === 'sandbox') return 'https://sandbox-api.uber.com/v1/eats';
+  return 'https://api.uber.com/v1/eats';
+}
+
 function buildDefaultUberEatsEndpoint(orderId: string, action: string): string {
-  const base = (process.env.UBEREATS_API_BASE_URL || 'https://api.uber.com/v1/eats').replace(/\/$/, '');
+  const base = getUberEatsApiBase();
   const pathSuffix = UBEREATS_ACTION_PATH[action] || 'status';
   return `${base}/orders/${encodeURIComponent(orderId)}/${pathSuffix}`;
 }
@@ -228,15 +236,24 @@ async function applyUberOrderAction(options: {
     : buildDefaultUberEatsEndpoint(options.order.id, action);
 
   const method = (process.env.UBEREATS_ORDER_ACTION_METHOD || 'POST').toUpperCase();
-  const payload = {
-    orderId: options.order.id,
-    channelOrderId: options.order.channelOrderId,
-    status: options.status,
-    action,
-    storeId,
-    requestedAt: new Date().toISOString(),
-    source: 'restaurantiq_delivery_console',
-  };
+  // Uber Eats API 期望的 body：accept 可空；cancel 需 reason；status 需 status 字段
+  const pathSuffix = UBEREATS_ACTION_PATH[action] || 'status';
+  let body: Record<string, unknown>;
+  if (pathSuffix === 'cancel') {
+    body = { reason: 'Restaurant declined or cancelled.' };
+  } else if (pathSuffix === 'status') {
+    const uberStatus =
+      action === 'start_preparing'
+        ? 'preparing'
+        : action === 'ready_for_pickup'
+          ? 'ready_for_pickup'
+          : action === 'complete'
+            ? 'delivered'
+            : options.status;
+    body = { status: uberStatus };
+  } else {
+    body = {};
+  }
 
   try {
     const response = await fetch(endpoint, {
@@ -246,7 +263,7 @@ async function applyUberOrderAction(options: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
       },
-      body: method === 'GET' ? undefined : JSON.stringify(payload),
+      body: method === 'GET' ? undefined : JSON.stringify(body),
       cache: 'no-store',
     });
 

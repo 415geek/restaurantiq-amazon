@@ -17,8 +17,9 @@ interface OAuthConfig {
   scopes: string[];
 }
 
-// Default Uber Eats scopes for delivery management
+// Default Uber Eats scopes for delivery management (eats.store required for pos_data / store endpoints)
 const DEFAULT_SCOPES = [
+  'eats.store',
   'eats.store.read',
   'eats.store.orders.read',
   'eats.store.status.write',

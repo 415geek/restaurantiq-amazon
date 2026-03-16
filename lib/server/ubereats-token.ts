@@ -55,7 +55,7 @@ function resolveClientCredentialsScope() {
   return (
     process.env.UBEREATS_CLIENT_CREDENTIALS_SCOPES ||
     process.env.UBEREATS_OAUTH_SCOPES ||
-    'eats.store.read eats.store.orders.read eats.store.status.write'
+    'eats.store eats.store.read eats.store.orders.read eats.store.status.write'
   );
 }
 

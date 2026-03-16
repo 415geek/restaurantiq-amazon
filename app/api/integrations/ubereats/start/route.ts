@@ -87,11 +87,11 @@ export async function GET(req: Request) {
   const clientCredentialsScope =
     process.env.UBEREATS_CLIENT_CREDENTIALS_SCOPES ||
     process.env.UBEREATS_OAUTH_SCOPES ||
-    'eats.store.read eats.store.orders.read eats.store.status.write';
+    'eats.store eats.store.read eats.store.orders.read eats.store.status.write';
   const authorizationCodeScope =
     process.env.UBEREATS_AUTHORIZATION_CODE_SCOPES ||
     process.env.UBEREATS_OAUTH_AUTHORIZE_SCOPES ||
-    'eats.pos_provisioning';
+    'eats.pos_provisioning eats.store eats.store.read eats.store.orders.read eats.store.status.write';
 
   const useServerTokenMode = Boolean(useServerTokenFlag || !clientId) && !forceOAuth;
   if (useServerTokenMode) {

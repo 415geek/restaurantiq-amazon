@@ -80,8 +80,11 @@ function safeNumber(value: unknown): number | null {
 }
 
 function normalizeBaseUrl() {
-  const base = process.env.UBEREATS_API_BASE_URL || 'https://api.uber.com';
-  return base.replace(/\/$/, '');
+  const envBase = process.env.UBEREATS_API_BASE_URL?.trim();
+  if (envBase) return envBase.replace(/\/$/, '');
+  const env = process.env.UBEREATS_ENVIRONMENT?.toLowerCase();
+  if (env === 'sandbox') return 'https://sandbox-api.uber.com';
+  return 'https://api.uber.com';
 }
 
 function endpointFromTemplate(template: string, storeId: string) {
