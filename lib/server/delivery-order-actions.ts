@@ -102,10 +102,10 @@ function statusToUberAction(status: DeliveryOrderStatus) {
   }
 }
 
-/** Uber Eats API 路径（与 restaurantiq-backend 一致）：/v1/eats/orders/:id/accept | cancel | status */
+/** Uber Eats 官方 API 路径：https://developer.uber.com/docs/eats/references/api */
 const UBEREATS_ACTION_PATH: Record<string, string> = {
-  accept: 'accept',
-  cancel: 'cancel',
+  accept: 'accept_pos_order',
+  cancel: 'deny_pos_order',
   start_preparing: 'status',
   ready_for_pickup: 'status',
   complete: 'status',
@@ -117,6 +117,17 @@ function getUberEatsApiBase(): string {
   const env = process.env.UBEREATS_ENVIRONMENT?.toLowerCase();
   if (env === 'sandbox') return 'https://sandbox-api.uber.com/v1/eats';
   return 'https://api.uber.com/v1/eats';
+}
+
+function resolveUberOrderId(order: DeliveryOrderTicket, details?: Record<string, unknown>): string {
+  if (details) {
+    const nested = asRecord(details.order ?? details);
+    const fromDetails =
+      safeString(details.order_id ?? details.orderId ?? details.uuid) ||
+      safeString(nested?.order_id ?? nested?.orderId ?? nested?.id ?? nested?.uuid);
+    if (fromDetails) return fromDetails;
+  }
+  return order.id;
 }
 
 function buildDefaultUberEatsEndpoint(orderId: string, action: string): string {
@@ -225,6 +236,7 @@ async function applyUberOrderAction(options: {
     process.env.UBEREATS_ORDER_ACTION_ENDPOINT_TEMPLATE?.trim() ||
     process.env.UBEREATS_ORDER_STATUS_ENDPOINT_TEMPLATE?.trim() ||
     '';
+  const uberOrderId = resolveUberOrderId(options.order, options.details);
   const endpoint = template
     ? fillEndpointTemplate(template, {
         orderId: options.order.id,
@@ -233,14 +245,13 @@ async function applyUberOrderAction(options: {
         action,
         storeId,
       })
-    : buildDefaultUberEatsEndpoint(options.order.id, action);
+    : buildDefaultUberEatsEndpoint(uberOrderId, action);
 
   const method = (process.env.UBEREATS_ORDER_ACTION_METHOD || 'POST').toUpperCase();
-  // Uber Eats API 期望的 body：accept 可空；cancel 需 reason；status 需 status 字段
   const pathSuffix = UBEREATS_ACTION_PATH[action] || 'status';
   let body: Record<string, unknown>;
-  if (pathSuffix === 'cancel') {
-    body = { reason: 'Restaurant declined or cancelled.' };
+  if (pathSuffix === 'deny_pos_order') {
+    body = { reason: { explanation: 'Restaurant declined or cancelled.', code: 'OTHER' } };
   } else if (pathSuffix === 'status') {
     const uberStatus =
       action === 'start_preparing'
@@ -267,6 +278,9 @@ async function applyUberOrderAction(options: {
       cache: 'no-store',
     });
 
+    if (res.status === 204) {
+      return { ok: true, httpStatus: 204, message: 'Uber Eats action accepted.' };
+    }
     const resBody = await res.json().catch(() => ({} as Record<string, unknown>));
     if (!res.ok) {
       const reason =
