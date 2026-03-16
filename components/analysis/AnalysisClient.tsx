@@ -572,9 +572,20 @@ function BusinessIntelPanel({
   return (
     <Card>
       <CardHeader className="border-b border-zinc-800/80">
-        <CardTitle className="text-base">
-          {lang === 'zh' ? '商家情报与深度分析结果' : 'Business Intelligence Deep-Dive'}
-        </CardTitle>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-base">
+            {lang === 'zh' ? '商家情报与深度分析结果' : 'Business Intelligence Deep-Dive'}
+          </CardTitle>
+          {intel.platformIntel?.source ? (
+            <span className="inline-flex items-center rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-0.5 text-[11px] text-sky-200">
+              {intel.platformIntel.source === 'nova_act'
+                ? (lang === 'zh' ? '平台情报 · Amazon Nova Act' : 'Platform Intel · Amazon Nova Act')
+                : intel.platformIntel.source === 'api'
+                  ? (lang === 'zh' ? '平台情报 · Amazon Nova' : 'Platform Intel · Amazon Nova')
+                  : (lang === 'zh' ? '平台情报 · 回退数据' : 'Platform Intel · Fallback')}
+            </span>
+          ) : null}
+        </div>
         <p className="mt-1 text-sm text-zinc-400">
           {intel.target.name} · {intel.target.address}
         </p>
@@ -744,6 +755,11 @@ function BusinessIntelPanel({
                 <p className="text-xs text-zinc-400">
                   {lang === 'zh' ? '平台菜单/活动情报来源' : 'Platform menu/campaign source'}: {intel.platformIntel.source}
                 </p>
+                {intel.platformIntel.warnings?.length ? (
+                  <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-2 text-[11px] text-yellow-100">
+                    {intel.platformIntel.warnings.join(' ')}
+                  </div>
+                ) : null}
                 <div className="grid gap-2 sm:grid-cols-2">
                   {intel.platformIntel.menuItems.slice(0, 6).map((item, index) => (
                     <div key={`${item.platform}-${item.name}-${index}`} className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-2 text-xs text-zinc-300">

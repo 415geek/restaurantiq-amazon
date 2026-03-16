@@ -12,6 +12,7 @@ import { AgentsModule } from './agents/agents.module';
 import { AnalysisModule } from './analysis/analysis.module';
 import { ExecutionModule } from './execution/execution.module';
 import { SocialModule } from './social/social.module';
+import { NovaActModule } from './nova-act/nova-act.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { SocialModule } from './social/social.module';
     AnalysisModule,
     ExecutionModule,
     SocialModule,
+    NovaActModule,
   ],
 })
 export class AppModule {}

@@ -200,7 +200,15 @@ export async function POST(req: Request) {
 
   const uploadedDocuments = (parsed.data.uploadedDocuments ?? []).map(normalizeUploadedDocument);
   const businessTarget = normalizeBusinessTarget(parsed.data.businessTarget);
-  const { userId } = await auth();
+  let userId: string | null = null;
+  if (!isDemo) {
+    try {
+      const authResult = await auth();
+      userId = authResult.userId ?? null;
+    } catch {
+      userId = null;
+    }
+  }
   const userKey = isDemo && demoId ? demoUserKey(demoId) : (userId ?? 'anonymous');
 
   let ubereatsWarning: string | undefined;

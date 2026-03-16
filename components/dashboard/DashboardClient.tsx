@@ -36,6 +36,7 @@ export function DashboardClient() {
   const [dailyBriefing, setDailyBriefing] = useState<string>('');
   const [dailyBriefingSource, setDailyBriefingSource] = useState<'live' | 'fallback'>('fallback');
   const [dailyBriefingWarning, setDailyBriefingWarning] = useState<string | undefined>();
+  const [dailyBriefingProvider, setDailyBriefingProvider] = useState<'nova' | 'openai' | 'deterministic' | undefined>();
 
   useEffect(() => {
     let disposed = false;
@@ -79,6 +80,11 @@ export function DashboardClient() {
         if (!response.ok || disposed) return;
         setDailyBriefing(typeof payload.briefing === 'string' ? payload.briefing : '');
         setDailyBriefingSource(payload.source === 'live' ? 'live' : 'fallback');
+        if (payload.provider === 'nova' || payload.provider === 'openai' || payload.provider === 'deterministic') {
+          setDailyBriefingProvider(payload.provider);
+        } else {
+          setDailyBriefingProvider(undefined);
+        }
         setDailyBriefingWarning(
           typeof payload.warning === 'string' && payload.warning ? payload.warning : undefined
         );
@@ -86,6 +92,7 @@ export function DashboardClient() {
         if (disposed) return;
         setDailyBriefing('');
         setDailyBriefingSource('fallback');
+        setDailyBriefingProvider(undefined);
         setDailyBriefingWarning(
           lang === 'zh'
             ? '每日简报接口暂不可用，已使用本地信息。'
@@ -147,6 +154,15 @@ export function DashboardClient() {
                 ? '回退摘要'
                 : 'Fallback'}
           </Badge>
+          {dailyBriefingProvider ? (
+            <Badge className="ml-2 border-sky-500/30 bg-sky-500/10 text-sky-200">
+              {dailyBriefingProvider === 'nova'
+                ? (lang === 'zh' ? 'Amazon Nova' : 'Amazon Nova')
+                : dailyBriefingProvider === 'openai'
+                  ? (lang === 'zh' ? 'OpenAI 次级提供' : 'OpenAI (secondary)')
+                  : (lang === 'zh' ? '确定性摘要' : 'Deterministic')}
+            </Badge>
+          ) : null}
         </CardHeader>
         <CardContent className="space-y-3">
           {dailyBriefing ? (

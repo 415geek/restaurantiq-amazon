@@ -270,7 +270,15 @@ export async function GET(req: NextRequest) {
   const demoId = getDemoIdFromRequest({ headers: req.headers });
   const isDemo = Boolean(demoId);
 
-  const { userId } = await auth();
+  let userId: string | null = null;
+  if (!isDemo) {
+    try {
+      const authResult = await auth();
+      userId = authResult.userId ?? null;
+    } catch {
+      userId = null;
+    }
+  }
   const userKey = isDemo && demoId ? demoUserKey(demoId) : (userId ?? 'anonymous');
 
   if (isDemo) {
@@ -297,7 +305,15 @@ export async function PATCH(req: Request) {
   const demoId = getDemoIdFromRequest({ headers: req.headers });
   const isDemo = Boolean(demoId);
 
-  const { userId } = await auth();
+  let userId: string | null = null;
+  if (!isDemo) {
+    try {
+      const authResult = await auth();
+      userId = authResult.userId ?? null;
+    } catch {
+      userId = null;
+    }
+  }
   const userKey = isDemo && demoId ? demoUserKey(demoId) : (userId ?? 'anonymous');
 
   const payload = await req.json().catch(() => null);

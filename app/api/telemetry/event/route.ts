@@ -25,21 +25,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'invalid_payload' }, { status: 400 });
   }
 
-  const { userId } = await auth();
   const demoId = getDemoIdFromRequest({ headers: req.headers });
+  let userId: string | null = null;
+  if (!demoId) {
+    try {
+      const authResult = await auth();
+      userId = authResult.userId ?? null;
+    } catch {
+      userId = null;
+    }
+  }
 
   const sessionId = getOrCreateSessionId(req);
   const userKey = demoId ? demoUserKey(demoId) : (userId ?? null);
 
   const sb = supabaseAdmin();
-  await sb.from('telemetry_events').insert({
-    session_id: sessionId,
-    user_key: userKey,
-    event_name: parsed.data.eventName,
-    pathname: parsed.data.pathname,
-    props: parsed.data.props ?? {},
-    user_agent: req.headers.get('user-agent') ?? null,
-  });
+  // Telemetry is best-effort; failures must not break the demo.
+  try {
+    await sb.from('telemetry_events').insert({
+      session_id: sessionId,
+      user_key: userKey,
+      event_name: parsed.data.eventName,
+      pathname: parsed.data.pathname,
+      props: parsed.data.props ?? {},
+      user_agent: req.headers.get('user-agent') ?? null,
+    });
+  } catch {
+    // ignore
+  }
 
   const res = NextResponse.json({ ok: true });
   res.cookies.set('riq_sid', sessionId, {

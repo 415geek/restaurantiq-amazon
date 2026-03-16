@@ -32,7 +32,15 @@ export async function GET(req: Request) {
   const demoId = getDemoIdFromRequest({ headers: req.headers });
   const isDemo = Boolean(demoId);
 
-  const { userId } = await auth();
+  let userId: string | null = null;
+  if (!isDemo) {
+    try {
+      const authResult = await auth();
+      userId = authResult.userId ?? null;
+    } catch {
+      userId = null;
+    }
+  }
   const { userKey } = getUserContext(userId, isDemo && demoId ? demoUserKey(demoId) : null);
 
   const [state, deliveryState] = await Promise.all([
@@ -68,7 +76,15 @@ export async function POST(req: Request) {
   const demoId = getDemoIdFromRequest({ headers: req.headers });
   const isDemo = Boolean(demoId);
 
-  const { userId } = await auth();
+  let userId: string | null = null;
+  if (!isDemo) {
+    try {
+      const authResult = await auth();
+      userId = authResult.userId ?? null;
+    } catch {
+      userId = null;
+    }
+  }
   const { userKey, actorId } = getUserContext(userId, isDemo && demoId ? demoUserKey(demoId) : null);
   const deliveryState = await loadDeliveryManagementState(userKey);
   const state = await loadOpsCopilotState(userKey);

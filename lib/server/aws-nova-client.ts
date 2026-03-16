@@ -34,12 +34,12 @@ export class NovaClient {
   private baseUrl: string;
 
   constructor() {
-    this.apiKey = process.env.AWS_NOVA_API_KEY || '';
+    this.apiKey = (process.env.AWS_NOVA_API_KEY || process.env.NOVA_API_KEY || '').trim();
     this.region = process.env.AWS_REGION || 'us-east-1';
     this.baseUrl = `https://bedrock-runtime.${this.region}.amazonaws.com`;
 
     if (!this.apiKey) {
-      console.warn('[Nova Client] AWS_NOVA_API_KEY not configured');
+      console.warn('[Nova Client] AWS_NOVA_API_KEY (or NOVA_API_KEY) not configured');
     }
   }
 
@@ -47,7 +47,14 @@ export class NovaClient {
    * Check if the client is configured
    */
   isConfigured(): boolean {
-    return Boolean(this.apiKey);
+    if (!this.apiKey) return false;
+    // Bedrock API Key format guard: prevents noisy 403s when a placeholder/UUID is supplied.
+    // If you're using a gateway that accepts other formats, set AWS_NOVA_API_KEY accordingly.
+    if (!this.apiKey.startsWith('ABSK')) {
+      console.warn('[Nova Client] AWS_NOVA_API_KEY format looks invalid (expected ABSK*).');
+      return false;
+    }
+    return true;
   }
 
   /**

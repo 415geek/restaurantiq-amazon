@@ -1,7 +1,7 @@
 import type { AnalysisResponse, UploadedOpsDocument } from '@/lib/types';
-import { runOpenAIJsonSchema } from '@/lib/server/openai-json';
 import { DAILY_BRIEFING_SYSTEM_PROMPT } from '@/lib/server/prompt-library';
 import { generateNovaCompletion } from '@/lib/server/aws-nova-client';
+import { runOpenAIJsonSchema } from '@/lib/server/openai-json';
 
 type DailyBriefingResult = {
   briefing: string;
@@ -115,7 +115,12 @@ function buildFallbackBriefing({
 
 export async function generateDailyBriefing(
   input: GenerateDailyBriefingInput
-): Promise<{ source: 'live' | 'fallback'; result: DailyBriefingResult; warning?: string }> {
+): Promise<{
+  source: 'live' | 'fallback';
+  result: DailyBriefingResult;
+  warning?: string;
+  provider?: 'nova' | 'openai' | 'deterministic';
+}> {
   const fallback = buildFallbackBriefing(input);
 
   const langLabel = input.lang === 'en' ? 'en' : 'zh';
@@ -149,6 +154,19 @@ export async function generateDailyBriefing(
     'Generate the daily briefing based on the following JSON:',
     JSON.stringify(compactPayload),
   ].join('\n\n');
+
+  // Hackathon 优先：始终先尝试使用 Amazon Nova 生成简报，再回退到 OpenAI，最后才使用确定性摘要。
+  const nova = await tryNovaDailyBriefing(prompt);
+  if (nova) {
+    return {
+      source: 'live',
+      result: nova,
+      warning: process.env.OPENAI_API_KEY
+        ? 'Using AWS Nova for daily briefing (preferred for hackathon).'
+        : 'Using AWS Nova for daily briefing.',
+      provider: 'nova',
+    };
+  }
 
   if (process.env.OPENAI_API_KEY) {
     const llmResult = await runOpenAIJsonSchema<DailyBriefingResult>({
@@ -191,39 +209,16 @@ export async function generateDailyBriefing(
           briefing: llmResult.briefing.trim(),
           highlights: llmResult.highlights?.length ? llmResult.highlights : fallback.highlights,
         },
+        warning: 'Using OpenAI as secondary provider (Nova unavailable).',
+        provider: 'openai',
       };
     }
-
-    // If OpenAI is configured but fails, try Nova before falling back.
-    const nova = await tryNovaDailyBriefing(prompt);
-    if (nova) {
-      return {
-        source: 'live',
-        result: nova,
-        warning: 'Using AWS Nova for daily briefing (OpenAI unavailable).',
-      };
-    }
-
-    return {
-      source: 'fallback',
-      result: fallback,
-      warning: 'AI daily briefing is unavailable. Showing deterministic summary.',
-    };
-  }
-
-  // No OpenAI key — try Nova.
-  const nova = await tryNovaDailyBriefing(prompt);
-  if (nova) {
-    return {
-      source: 'live',
-      result: nova,
-      warning: 'Using AWS Nova for daily briefing.',
-    };
   }
 
   return {
     source: 'fallback',
     result: fallback,
     warning: 'AI daily briefing is unavailable. Showing deterministic summary.',
+    provider: 'deterministic',
   };
 }

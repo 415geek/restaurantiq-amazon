@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
   const parsed = parseState(incomingState);
 
   const redirectBack = (params: Record<string, string>) => {
-    const out = new URL('/settings', appUrl);
+    const out = new URL('/social-radar', appUrl);
     for (const [k, v] of Object.entries(params)) out.searchParams.set(k, v);
     const res = NextResponse.redirect(out);
     res.cookies.delete(GOOGLE_BUSINESS_OAUTH_STATE_COOKIE);

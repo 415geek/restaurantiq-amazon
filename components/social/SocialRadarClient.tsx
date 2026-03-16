@@ -47,6 +47,7 @@ export function SocialRadarClient() {
   const [tick, setTick] = useState(Date.now());
   const [metaWarning, setMetaWarning] = useState<string | null>(null);
   const [metaConnected, setMetaConnected] = useState<{ facebook: boolean; instagram: boolean }>({ facebook: false, instagram: false });
+  const [googleConnected, setGoogleConnected] = useState(false);
 
   useEffect(() => {
     const id = window.setInterval(() => setTick(Date.now()), 1000);
@@ -76,7 +77,7 @@ export function SocialRadarClient() {
         latestMentionCTA: '查看原帖',
         minuteRollback: 'AI 回复发送后可在 1 分钟内回撤',
         rating: '评分', reviews: '评论数', likes: '点赞', saves: '收藏', shares: '转发', mentionsMetric: '提及', followersDelta: '粉丝变化',
-        metaConnections: 'Meta 连接状态',
+        metaConnections: '社媒连接状态',
         connected: '已连接',
         notConnected: '未连接',
       }
@@ -102,7 +103,7 @@ export function SocialRadarClient() {
         latestMentionCTA: 'Open Post',
         minuteRollback: 'AI-generated replies can be rolled back within 1 minute after send',
         rating: 'Rating', reviews: 'Reviews', likes: 'Likes', saves: 'Saves', shares: 'Shares', mentionsMetric: 'Mentions', followersDelta: 'Follower Δ',
-        metaConnections: 'Meta Connection Status',
+        metaConnections: 'Social Connection Status',
         connected: 'Connected',
         notConnected: 'Not connected',
       };
@@ -125,8 +126,20 @@ export function SocialRadarClient() {
     }
   };
 
+  const loadGoogleBusinessStatus = async () => {
+    try {
+      const res = await fetch('/api/integrations/google-business/status', { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      setGoogleConnected(Boolean(data.googleBusiness?.connected));
+    } catch {
+      // ignore, keep default false
+    }
+  };
+
   useEffect(() => {
     loadMetaSocial();
+    loadGoogleBusinessStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -210,6 +223,32 @@ export function SocialRadarClient() {
           <Badge className={metaConnected.instagram ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-zinc-700 bg-zinc-800/40 text-zinc-300'}>
             Instagram: {metaConnected.instagram ? text.connected : text.notConnected}
           </Badge>
+          <Badge className={googleConnected ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-zinc-700 bg-zinc-800/40 text-zinc-300'}>
+            Google: {googleConnected ? text.connected : text.notConnected}
+          </Badge>
+          {!googleConnected ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                window.location.href = '/api/integrations/google-business/start';
+              }}
+            >
+              连接 Google 评价
+            </Button>
+          ) : (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 border border-zinc-700/60"
+              title={lang === 'zh' ? '添加更多 Google Business 账号' : 'Add another Google Business account'}
+              onClick={() => {
+                window.location.href = '/api/integrations/google-business/start';
+              }}
+            >
+              <span className="text-lg leading-none">+</span>
+            </Button>
+          )}
           {metaWarning ? <span className="text-xs text-zinc-500">{metaWarning}</span> : null}
         </CardContent>
       </Card>

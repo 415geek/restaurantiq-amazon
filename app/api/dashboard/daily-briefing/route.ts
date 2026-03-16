@@ -10,7 +10,16 @@ export async function GET(req: NextRequest) {
   const demoId = getDemoIdFromRequest({ headers: req.headers });
   const isDemo = Boolean(demoId);
 
-  const { userId } = await auth();
+  // 对于 Hackathon Demo 会话，跳过 Clerk 认证，避免本地/评审环境缺少 middleware 导致 500。
+  let userId: string | null = null;
+  if (!isDemo) {
+    try {
+      const authResult = await auth();
+      userId = authResult.userId ?? null;
+    } catch {
+      userId = null;
+    }
+  }
   const language = req.nextUrl.searchParams.get('lang') === 'en' ? 'en' : 'zh';
 
   const runtime = !isDemo && userId ? await loadPersistedAnalysisRuntimeState(userId) : null;
@@ -28,6 +37,7 @@ export async function GET(req: NextRequest) {
     warning: result.warning,
     briefing: result.result.briefing,
     highlights: result.result.highlights,
+    provider: result.provider ?? 'deterministic',
     generatedAt: new Date().toISOString(),
   });
 }
