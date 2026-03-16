@@ -62,7 +62,20 @@ export async function GET(req: Request) {
     (uberEnv === 'production'
       ? 'https://auth.uber.com/oauth/v2/token'
       : 'https://sandbox-login.uber.com/oauth/v2/token');
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  // 生产环境必须用真实站点 URL，否则 Uber 会回调到 localhost 导致跳转到 localhost
+  const envAppUrl = (process.env.NEXT_PUBLIC_APP_URL || '').trim();
+  let appUrl = envAppUrl || 'http://localhost:3000';
+  if (
+    process.env.NODE_ENV === 'production' &&
+    (appUrl.includes('localhost') || appUrl.includes('127.0.0.1'))
+  ) {
+    try {
+      const origin = new URL(req.url).origin;
+      if (origin && !origin.includes('localhost')) appUrl = origin;
+    } catch {
+      appUrl = 'https://restaurantiq.ai';
+    }
+  }
   const secureCookie = process.env.NODE_ENV === 'production';
 
   const clientCredentialsScope =
