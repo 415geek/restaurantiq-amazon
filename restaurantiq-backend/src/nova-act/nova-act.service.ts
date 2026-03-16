@@ -1,6 +1,60 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
+
+/**
+ * Simple inline Nova client for NestJS backend.
+ * Mirrors the logic in `lib/server/aws-nova-client.ts` but avoids cross-bundle imports.
+ */
+async function generateNovaTextCompletion(prompt: string, options?: { model?: string; temperature?: number; maxTokens?: number }) {
+  const apiKey = (process.env.AWS_NOVA_API_KEY || process.env.NOVA_API_KEY || '').trim();
+  const region = process.env.AWS_REGION || 'us-east-1';
+  const baseUrl = `https://bedrock-runtime.${region}.amazonaws.com`;
+
+  if (!apiKey) {
+    throw new Error('AWS_NOVA_API_KEY (or NOVA_API_KEY) not configured for Nova Act backend');
+  }
+  if (!apiKey.startsWith('ABSK')) {
+    throw new Error('AWS_NOVA_API_KEY format looks invalid for Nova Act backend (expected ABSK*)');
+  }
+
+  const model = options?.model || 'amazon.nova-pro-v1:0';
+  const temperature = options?.temperature ?? 0.7;
+  const maxTokens = options?.maxTokens ?? 1000;
+
+  const response = await fetch(`${baseUrl}/model/${model}/converse`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+      'X-Amz-Bedrock-Model': model,
+    },
+    body: JSON.stringify({
+      messages: [
+        {
+          role: 'user',
+          content: [{ text: prompt }],
+        },
+      ],
+      inferenceConfig: {
+        temperature,
+        maxTokens,
+        topP: 0.9,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    throw new Error(`AWS Nova API error (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json().catch(() => ({}));
+  const content = data?.output?.message?.content?.[0]?.text;
+  if (!content || typeof content !== 'string') {
+    throw new Error('Empty content from AWS Nova for Nova Act backend');
+  }
+  return content as string;
+}
 
 interface OpenAIStyleMessage {
   role: 'system' | 'user' | 'assistant';
@@ -39,38 +93,39 @@ export class NovaActService {
   }
 
   /**
-   * Proxy an OpenAI-style chat request to Amazon Nova / Bedrock gateway.
+   * Handle an OpenAI-style chat request directly via AWS Nova / Bedrock.
    *
-   * Note:
-   * - This service assumes you already have an HTTP-accessible Nova gateway
-   *   (e.g. API Gateway/Lambda or an internal service) that accepts
-   *   OpenAI-compatible requests with NOVA_API_KEY.
-   * - The gateway URL is configured via NOVA_ACT_UPSTREAM_URL on the backend.
+   * This removes the need for an external Nova Act HTTP gateway.
    */
   async proxyToNovaGateway(body: OpenAIStyleRequestBody) {
-    const upstreamUrl = this.configService.get<string>('NOVA_ACT_UPSTREAM_URL');
-    const upstreamKey = this.configService.get<string>('NOVA_API_KEY') 
-      || this.configService.get<string>('AWS_NOVA_API_KEY');
-
-    if (!upstreamUrl || !upstreamKey) {
-      throw new Error('Nova Act upstream not configured (NOVA_ACT_UPSTREAM_URL + NOVA_API_KEY/AWS_NOVA_API_KEY required)');
+    const firstUserMessage = body.messages.find((m) => m.role === 'user');
+    if (!firstUserMessage || !firstUserMessage.content) {
+      throw new InternalServerErrorException('Nova Act request is missing user content');
     }
 
-    const payload = {
-      model: body.model || 'nova-2-lite-v1',
-      messages: body.messages,
-      temperature: body.temperature ?? 0.7,
-      max_tokens: body.max_tokens ?? 2000,
-    };
+    try {
+      const raw = await generateNovaTextCompletion(firstUserMessage.content, {
+        model: body.model || 'amazon.nova-pro-v1:0',
+        temperature: body.temperature ?? 0.7,
+        maxTokens: body.max_tokens ?? 2000,
+      });
 
-    const response = await axios.post(upstreamUrl, payload, {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${upstreamKey}`,
-      },
-    });
-
-    return response.data;
+      // Ensure OpenAI-style response shape
+      return {
+        choices: [
+          {
+            message: {
+              content: raw,
+            },
+          },
+        ],
+      };
+    } catch (error) {
+      // Let caller know Nova failed so frontend can fall back if needed
+      throw new InternalServerErrorException(
+        error instanceof Error ? error.message : 'Nova Act backend failed to call AWS Nova',
+      );
+    }
   }
 }
 
