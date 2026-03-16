@@ -1,4 +1,36 @@
 /**
+ * Amazon Nova Act Module
+ *
+ * Browser automation for restaurant operations:
+ * - Competitor menu/price scanning
+ * - Automated price updates across platforms
+ * - Review monitoring and response
+ *
+ * Usage:
+ * ```typescript
+ * import {
+ *   getNovaActClient,
+ *   createCompetitorAnalysisService,
+ * } from '@/lib/server/nova-act';
+ *
+ * // Check configuration
+ * const client = getNovaActClient();
+ * const config = client.checkConfiguration();
+ *
+ * // Scan competitors
+ * const results = await client.scanCompetitorMenu('doordash', 'chinese restaurant', 'SF');
+ *
+ * // Run full analysis
+ * const service = createCompetitorAnalysisService();
+ * const analysis = await service.runFullAnalysis(myMenu, ['doordash', 'ubereats'], 'SF');
+ * ```
+ */
+
+export * from './types';
+export * from './browser-client';
+export * from './competitor-analysis';
+
+/**
  * Nova Act Module
  * UI Automation for RestaurantIQ
  * 

@@ -16,9 +16,9 @@ class AgentRole(str, Enum):
 
 
 class ModelTier(str, Enum):
-    FAST = 'amazon.nova-lite-v1:0'
-    BALANCED = 'amazon.nova-pro-v1:0'
-    POWERFUL = 'amazon.nova-pro-v1:0'
+    FAST = "amazon.nova-micro-v1:0"
+    BALANCED = "amazon.nova-lite-v1:0"
+    POWERFUL = "amazon.nova-pro-v1:0"
 
 
 class ToolConfig(BaseModel):

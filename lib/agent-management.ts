@@ -64,7 +64,19 @@ export type AgentGraph = {
 
 export const AGENT_GRAPH_STORAGE_KEY = 'restaurantiq.agent.graph.v2';
 
-export const MODEL_OPTIONS = ['gpt-4o-mini', 'gpt-4o', 'amazon.nova-lite-v1:0', 'amazon.nova-pro-v1:0', 'claude-3-5-sonnet-latest'] as const;
+export const MODEL_OPTIONS = [
+  { label: 'Nova Micro (Fast)', value: 'amazon.nova-micro-v1:0' },
+  { label: 'Nova Lite (Balanced)', value: 'amazon.nova-lite-v1:0' },
+  { label: 'Nova Pro (Quality)', value: 'amazon.nova-pro-v1:0' },
+  { label: 'GPT-4o Mini', value: 'gpt-4o-mini' },
+  { label: 'Claude Sonnet', value: 'claude-3-5-sonnet-latest' },
+] as const;
+
+export const DEFAULT_MODEL_ROUTING = {
+  simple: 'amazon.nova-lite-v1:0',
+  analysis: 'amazon.nova-pro-v1:0',
+  critical: 'amazon.nova-pro-v1:0',
+} as const;
 
 type AgentSeed = Omit<AgentNode, 'x' | 'y'>;
 

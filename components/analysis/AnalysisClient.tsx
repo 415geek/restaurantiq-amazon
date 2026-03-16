@@ -87,6 +87,9 @@ export function AnalysisClient() {
   const [uploading, setUploading] = useState(false);
   const [submittingUploadedData, setSubmittingUploadedData] = useState(false);
 
+  const [competitorAnalysis, setCompetitorAnalysis] = useState<any>(null);
+  const [analyzingCompetitors, setAnalyzingCompetitors] = useState(false);
+
   const selectedBusiness = useMemo(
     () => businessCandidates.find((candidate) => candidate.id === selectedBusinessId),
     [businessCandidates, selectedBusinessId]
@@ -218,6 +221,32 @@ export function AnalysisClient() {
     }
   };
 
+  const runCompetitorAnalysis = async () => {
+    setAnalyzingCompetitors(true);
+    try {
+      const response = await fetch('/api/nova-act/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          myMenu: [],
+          platforms: ['doordash', 'ubereats'],
+          location: 'San Francisco, CA',
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Analysis failed');
+      }
+      setCompetitorAnalysis(data);
+      toast.success(lang === 'zh' ? '竞争分析完成' : 'Competitor analysis complete');
+    } catch {
+      toast.error(lang === 'zh' ? '分析失败' : 'Analysis failed');
+    } finally {
+      setAnalyzingCompetitors(false);
+    }
+  };
+
   const handleUpload = async (files: FileList | null) => {
     if (!files?.length) return;
     setUploading(true);
@@ -293,6 +322,9 @@ export function AnalysisClient() {
               <Play className="h-4 w-4" />
               {loading ? (lang === 'zh' ? '对比中…' : 'Comparing…') : lang === 'zh' ? '对比' : 'Compare'}
             </Button>
+            <Button variant="secondary" onClick={() => void runCompetitorAnalysis()} disabled={analyzingCompetitors}>
+              {lang === 'zh' ? '🔍 竞争对手分析 (Nova Act)' : '🔍 Competitor Analysis (Nova Act)'}
+            </Button>
           </div>
 
           {businessSearchWarning ? (
@@ -350,6 +382,36 @@ export function AnalysisClient() {
           )}
         </CardContent>
       </Card>
+
+      {competitorAnalysis && (
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle>
+              {lang === 'zh' ? '竞争对手分析结果' : 'Competitor Analysis Results'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-4 text-sm text-zinc-400">
+              {lang === 'zh'
+                ? competitorAnalysis.summary_zh ?? competitorAnalysis.summary
+                : competitorAnalysis.summary ?? competitorAnalysis.summary_zh}
+            </p>
+            {competitorAnalysis.recommendations?.map((rec: any, index: number) => (
+              <div key={index} className="mb-2 rounded bg-zinc-900/80 p-3">
+                <div className="flex justify-between">
+                  <span>{rec.itemName}</span>
+                  <span>
+                    ${rec.currentPrice} → ${rec.recommendedPrice}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-zinc-500">
+                  {lang === 'zh' ? rec.rationale_zh ?? rec.rationale : rec.rationale ?? rec.rationale_zh}
+                </p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="border-zinc-800 bg-zinc-950/50">
         <CardHeader className="flex flex-col items-start gap-3 border-b border-zinc-800/80 sm:flex-row sm:items-center sm:justify-between">

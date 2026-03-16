@@ -544,8 +544,8 @@ export function AgentManagementClient() {
                   <Field label={lang === 'zh' ? '使用模型' : 'LLM model'}>
                     <Select value={selectedNode.model} onChange={(e) => updateSelectedNode({ model: e.target.value })}>
                       {MODEL_OPTIONS.map((model) => (
-                        <option key={model} value={model}>
-                          {model}
+                        <option key={model.value} value={model.value}>
+                          {model.label}
                         </option>
                       ))}
                     </Select>

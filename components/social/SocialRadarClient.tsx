@@ -238,9 +238,8 @@ export function SocialRadarClient() {
             </Button>
           ) : (
             <Button
-              size="icon"
               variant="ghost"
-              className="h-7 w-7 border border-zinc-700/60"
+              className="h-7 w-7 border border-zinc-700/60 p-0"
               title={lang === 'zh' ? '添加更多 Google Business 账号' : 'Add another Google Business account'}
               onClick={() => {
                 window.location.href = '/api/integrations/google-business/start';
