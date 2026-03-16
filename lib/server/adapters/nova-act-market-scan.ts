@@ -192,21 +192,12 @@ Return ONLY the JSON, no other text.`;
       warnings: [],
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'unknown error';
-    const cause =
-      error instanceof Error && error.cause instanceof Error
-        ? error.cause.message
-        : error instanceof Error && typeof (error as unknown as { cause?: { code?: string } }).cause?.code === 'string'
-          ? (error as unknown as { cause: { code: string } }).cause.code
-          : null;
-    const detail = cause ? ` (${cause})` : '';
+    // 网络/连接失败时静默使用 fallback，不向用户展示失败提示（与「未配置 Nova」行为一致）
     return {
       source: 'fallback',
       menuItems: fallbackMenuSignals(input),
       campaigns: fallbackCampaignSignals(),
-      warnings: [
-        `Amazon Nova market scan failed: ${message}${detail}. Check NOVA_ACT_ENDPOINT is reachable and the backend is running.`,
-      ],
+      warnings: [],
     };
   }
 }
