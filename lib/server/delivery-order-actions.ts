@@ -256,7 +256,7 @@ async function applyUberOrderAction(options: {
   }
 
   try {
-    const response = await fetch(endpoint, {
+    const res = await fetch(endpoint, {
       method,
       headers: {
         Authorization: `Bearer ${token}`,
@@ -267,22 +267,22 @@ async function applyUberOrderAction(options: {
       cache: 'no-store',
     });
 
-    const body = await response.json().catch(() => ({} as Record<string, unknown>));
-    if (!response.ok) {
+    const resBody = await res.json().catch(() => ({} as Record<string, unknown>));
+    if (!res.ok) {
       const reason =
-        safeString(body.message) ||
-        safeString(body.error) ||
-        `Uber Eats action request failed (${response.status}).`;
+        safeString(resBody.message) ||
+        safeString(resBody.error) ||
+        `Uber Eats action request failed (${res.status}).`;
       return {
         ok: false,
-        httpStatus: response.status,
+        httpStatus: res.status,
         message: reason,
       };
     }
 
     return {
       ok: true,
-      httpStatus: response.status,
+      httpStatus: res.status,
       message: 'Uber Eats action accepted.',
     };
   } catch (error) {
