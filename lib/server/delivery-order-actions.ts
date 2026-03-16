@@ -102,6 +102,21 @@ function statusToUberAction(status: DeliveryOrderStatus) {
   }
 }
 
+/** Uber Eats 官方 API 路径后缀：https://developer.uber.com/docs/eats/references/api */
+const UBEREATS_ACTION_PATH: Record<string, string> = {
+  accept: 'accept_pos_order',
+  cancel: 'deny_pos_order',
+  start_preparing: 'start_preparing',
+  ready_for_pickup: 'ready_for_pickup',
+  complete: 'complete',
+};
+
+function buildDefaultUberEatsEndpoint(orderId: string, action: string): string {
+  const base = (process.env.UBEREATS_API_BASE_URL || 'https://api.uber.com/v1/eats').replace(/\/$/, '');
+  const pathSuffix = UBEREATS_ACTION_PATH[action] || 'status';
+  return `${base}/orders/${encodeURIComponent(orderId)}/${pathSuffix}`;
+}
+
 async function resolveUberToken(
   userKey: string
 ): Promise<{ token: string; source: UberResolvedTokenSource; debugInfo: Record<string, string> }> {
@@ -195,27 +210,22 @@ async function applyUberOrderAction(options: {
     };
   }
 
+  const action = statusToUberAction(options.status);
+  const storeId = resolveStoreId(options.order, options.details);
+
   const template =
     process.env.UBEREATS_ORDER_ACTION_ENDPOINT_TEMPLATE?.trim() ||
     process.env.UBEREATS_ORDER_STATUS_ENDPOINT_TEMPLATE?.trim() ||
     '';
-  if (!template) {
-    return {
-      ok: false,
-      warning:
-        'UBEREATS_ORDER_ACTION_ENDPOINT_TEMPLATE is missing. Action was saved locally only.',
-    };
-  }
-
-  const action = statusToUberAction(options.status);
-  const storeId = resolveStoreId(options.order, options.details);
-  const endpoint = fillEndpointTemplate(template, {
-    orderId: options.order.id,
-    channelOrderId: options.order.channelOrderId,
-    status: options.status,
-    action,
-    storeId,
-  });
+  const endpoint = template
+    ? fillEndpointTemplate(template, {
+        orderId: options.order.id,
+        channelOrderId: options.order.channelOrderId,
+        status: options.status,
+        action,
+        storeId,
+      })
+    : buildDefaultUberEatsEndpoint(options.order.id, action);
 
   const method = (process.env.UBEREATS_ORDER_ACTION_METHOD || 'POST').toUpperCase();
   const payload = {
