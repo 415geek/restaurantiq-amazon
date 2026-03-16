@@ -62,18 +62,23 @@ export async function GET(req: Request) {
     (uberEnv === 'production'
       ? 'https://auth.uber.com/oauth/v2/token'
       : 'https://sandbox-login.uber.com/oauth/v2/token');
-  // 生产环境必须用真实站点 URL，否则 Uber 会回调到 localhost 导致跳转到 localhost
+  // 生产环境必须用真实站点 URL，否则 Uber 会回调到 localhost。优先从请求头取（兼容 Nginx 反向代理）
   const envAppUrl = (process.env.NEXT_PUBLIC_APP_URL || '').trim();
   let appUrl = envAppUrl || 'http://localhost:3000';
-  if (
-    process.env.NODE_ENV === 'production' &&
-    (appUrl.includes('localhost') || appUrl.includes('127.0.0.1'))
-  ) {
-    try {
-      const origin = new URL(req.url).origin;
-      if (origin && !origin.includes('localhost')) appUrl = origin;
-    } catch {
-      appUrl = 'https://restaurantiq.ai';
+  if (process.env.NODE_ENV === 'production') {
+    const headers = req.headers;
+    const forwardedProto = headers.get('x-forwarded-proto')?.trim();
+    const forwardedHost = headers.get('x-forwarded-host')?.trim() || headers.get('host')?.trim();
+    if (forwardedHost && forwardedHost !== 'localhost' && !forwardedHost.startsWith('127.0.0.1')) {
+      const proto = forwardedProto === 'http' ? 'http' : 'https';
+      appUrl = `${proto}://${forwardedHost}`;
+    } else if (appUrl.includes('localhost') || appUrl.includes('127.0.0.1')) {
+      try {
+        const origin = new URL(req.url).origin;
+        if (origin && !origin.includes('localhost')) appUrl = origin;
+      } catch {
+        appUrl = 'https://restaurantiq.ai';
+      }
     }
   }
   const secureCookie = process.env.NODE_ENV === 'production';
