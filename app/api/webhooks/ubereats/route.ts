@@ -2,6 +2,7 @@ import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import {
   appendUberEatsWebhookEvent,
+  getWebhookUserKey,
   listUberEatsWebhookEvents,
 } from '@/lib/server/ubereats-webhook-store';
 import { auth } from '@clerk/nextjs/server';
@@ -214,9 +215,12 @@ export async function POST(req: NextRequest) {
   });
 
   // Process order notifications to create/update orders in state
+  // Webhook 请求无登录态：优先 env，其次持久化配置（设置页「使用当前账号接收」），否则 anonymous
   if (isOrderNotificationEvent(topic, eventTypeText)) {
+    const envUserKey = process.env.UBEREATS_WEBHOOK_USER_KEY?.trim();
+    const storedUserKey = envUserKey ? null : await getWebhookUserKey();
     const { userId } = await auth();
-    const userKey = userId ?? 'anonymous';
+    const userKey = envUserKey || storedUserKey || userId ?? 'anonymous';
 
     try {
       const events = await listUberEatsWebhookEvents(1);

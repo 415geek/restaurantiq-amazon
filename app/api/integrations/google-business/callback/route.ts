@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { Buffer } from 'node:buffer';
+import { getAppUrlFromRequest } from '@/lib/server/app-url';
 import { upsertGoogleBusinessConnectionState } from '@/lib/server/google-business-oauth-store';
 
 const GOOGLE_BUSINESS_OAUTH_STATE_COOKIE = 'google_business_oauth_state';
@@ -29,8 +30,8 @@ export async function GET(req: NextRequest) {
   const userKey = userId ?? 'anonymous';
   const clientId = process.env.GOOGLE_BUSINESS_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_BUSINESS_CLIENT_SECRET;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-  const redirectUri = `${appUrl.replace(/\/$/, '')}/api/integrations/google-business/callback`;
+  const appUrl = getAppUrlFromRequest(req);
+  const redirectUri = `${appUrl}/api/integrations/google-business/callback`;
 
   const url = new URL(req.url);
   const code = url.searchParams.get('code');
@@ -185,9 +186,10 @@ export async function GET(req: NextRequest) {
       google_business_status: 'connected',
       google_business_connected_count: String(locations.length),
     });
+    const isSecure = appUrl.startsWith('https');
     res.cookies.set(GOOGLE_BUSINESS_CONNECTION_COOKIE, JSON.stringify(nextConnections), {
       httpOnly: true,
-      secure: true,
+      secure: isSecure,
       sameSite: 'lax',
       path: '/',
       maxAge: 60 * 60 * 24 * 30,

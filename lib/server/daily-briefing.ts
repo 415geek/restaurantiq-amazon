@@ -161,9 +161,6 @@ export async function generateDailyBriefing(
     return {
       source: 'live',
       result: nova,
-      warning: process.env.OPENAI_API_KEY
-        ? 'Using AWS Nova for daily briefing (preferred for hackathon).'
-        : 'Using AWS Nova for daily briefing.',
       provider: 'nova',
     };
   }

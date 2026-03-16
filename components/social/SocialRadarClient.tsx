@@ -227,26 +227,24 @@ export function SocialRadarClient() {
             Google: {googleConnected ? text.connected : text.notConnected}
           </Badge>
           {!googleConnected ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                window.location.href = '/api/integrations/google-business/start';
-              }}
+            <a
+              href="/api/integrations/google-business/start"
+              rel="noopener noreferrer"
+              onClick={(e) => { e.preventDefault(); window.location.href = e.currentTarget.href; }}
+              className="inline-flex h-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm font-medium text-zinc-100 transition-colors hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F26A36]/70"
             >
               连接 Google 评价
-            </Button>
+            </a>
           ) : (
-            <Button
-              variant="ghost"
-              className="h-7 w-7 border border-zinc-700/60 p-0"
+            <a
+              href="/api/integrations/google-business/start"
+              rel="noopener noreferrer"
+              onClick={(e) => { e.preventDefault(); window.location.href = e.currentTarget.href; }}
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-zinc-700/60 bg-transparent text-zinc-200 transition-colors hover:bg-zinc-900/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F26A36]/70"
               title={lang === 'zh' ? '添加更多 Google Business 账号' : 'Add another Google Business account'}
-              onClick={() => {
-                window.location.href = '/api/integrations/google-business/start';
-              }}
             >
               <span className="text-lg leading-none">+</span>
-            </Button>
+            </a>
           )}
           {metaWarning ? <span className="text-xs text-zinc-500">{metaWarning}</span> : null}
         </CardContent>

@@ -114,6 +114,12 @@ type Copy = {
   eventStore: string;
   eventType: string;
   sourceLabel: string;
+  webhookReceiverTitle: string;
+  webhookReceiverSet: string;
+  webhookReceiverSetButton: string;
+  webhookReceiverHint: string;
+  demoBannerText: string;
+  exitDemoButton: string;
 };
 
 const ORDER_COLUMNS: DeliveryOrderStatus[] = ['new', 'accepted', 'preparing', 'ready', 'completed'];
@@ -235,6 +241,12 @@ export function OrderCenterClient() {
           eventStore: '门店',
           eventType: '事件',
           sourceLabel: '数据源',
+          webhookReceiverTitle: 'Webhook 订单接收账号',
+          webhookReceiverSet: '当前账号已设为接收 Uber 推送订单',
+          webhookReceiverSetButton: '使用当前账号接收 Uber 推送订单',
+          webhookReceiverHint: '设置后，Uber 推送的新订单将出现在本页「订单看板」。',
+          demoBannerText: '当前为 Demo 模式，接单/改状态仅更新本地，不会同步到 Uber Eats。',
+          exitDemoButton: '退出 Demo 模式',
         }
       : {
           title: 'Order Center',
@@ -332,6 +344,12 @@ export function OrderCenterClient() {
           eventStore: 'Store',
           eventType: 'Event',
           sourceLabel: 'Source',
+          webhookReceiverTitle: 'Webhook order receiver',
+          webhookReceiverSet: 'This account receives Uber push orders',
+          webhookReceiverSetButton: 'Use this account to receive Uber push orders',
+          webhookReceiverHint: 'After setting, new Uber orders will appear in Order Board.',
+          demoBannerText: 'Demo mode: order actions update locally only and are not sent to Uber Eats.',
+          exitDemoButton: 'Exit demo mode',
         };
 
   const [state, setState] = useState<DeliveryManagementState | null>(null);
@@ -350,6 +368,16 @@ export function OrderCenterClient() {
   const [queryWarning, setQueryWarning] = useState<string | null>(null);
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<DeliveryOrderDetailResponse | null>(null);
   const [queryFilters, setQueryFilters] = useState(DEFAULT_ORDER_QUERY_FILTERS);
+
+  const [webhookReceiverConfig, setWebhookReceiverConfig] = useState<{
+    currentUserId: string | null;
+    configuredUserKey: string | null;
+    isCurrentUserConfigured: boolean;
+  } | null>(null);
+  const [webhookReceiverSetting, setWebhookReceiverSetting] = useState(false);
+
+  const [isDemoMode, setIsDemoMode] = useState(false);
+  const [exitingDemo, setExitingDemo] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -378,8 +406,32 @@ export function OrderCenterClient() {
 
   useEffect(() => {
     void load();
+    (async () => {
+      try {
+        const r = await fetch('/api/settings/demo-mode', { credentials: 'include', cache: 'no-store' });
+        if (r.ok) {
+          const d = await r.json();
+          setIsDemoMode(Boolean(d.isDemo));
+        }
+      } catch {
+        // ignore
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const exitDemoMode = async () => {
+    setExitingDemo(true);
+    try {
+      const res = await fetch('/api/settings/exit-demo', { method: 'POST', credentials: 'include' });
+      if (res.ok) window.location.reload();
+      else toast.error(lang === 'zh' ? '退出失败' : 'Failed to exit demo');
+    } catch {
+      toast.error(lang === 'zh' ? '退出失败' : 'Failed to exit demo');
+    } finally {
+      setExitingDemo(false);
+    }
+  };
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -430,6 +482,42 @@ export function OrderCenterClient() {
     void searchOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.updatedAt]);
+
+  useEffect(() => {
+    if (workspaceView !== 'webhooks') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/settings/webhook-ubereats-user', { cache: 'no-store' });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!cancelled) setWebhookReceiverConfig(data);
+      } catch {
+        if (!cancelled) setWebhookReceiverConfig(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [workspaceView]);
+
+  const setCurrentUserAsWebhookReceiver = async () => {
+    setWebhookReceiverSetting(true);
+    try {
+      const res = await fetch('/api/settings/webhook-ubereats-user', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data?.message || (lang === 'zh' ? '设置失败' : 'Failed to set'));
+        return;
+      }
+      setWebhookReceiverConfig((prev) =>
+        prev ? { ...prev, configuredUserKey: data.configuredUserKey, isCurrentUserConfigured: true } : null
+      );
+      toast.success(lang === 'zh' ? '已设为接收账号，Uber 新订单将推送到本页。' : 'This account will receive Uber push orders.');
+    } catch {
+      toast.error(lang === 'zh' ? '设置失败' : 'Failed to set');
+    } finally {
+      setWebhookReceiverSetting(false);
+    }
+  };
 
   const patchAction = async (action: Record<string, unknown>, toastMessage?: string) => {
     if (!state) return;
@@ -1138,7 +1226,23 @@ export function OrderCenterClient() {
       <CardHeader>
         <CardTitle className="text-base">{copy.webhooks}</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4 space-y-2">
+          <p className="text-sm font-medium text-zinc-200">{copy.webhookReceiverTitle}</p>
+          <p className="text-xs text-zinc-500">{copy.webhookReceiverHint}</p>
+          {webhookReceiverConfig?.isCurrentUserConfigured ? (
+            <p className="text-sm text-emerald-400">{copy.webhookReceiverSet}</p>
+          ) : (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={setCurrentUserAsWebhookReceiver}
+              disabled={webhookReceiverSetting || !webhookReceiverConfig?.currentUserId}
+            >
+              {webhookReceiverSetting ? (lang === 'zh' ? '设置中…' : 'Setting…') : copy.webhookReceiverSetButton}
+            </Button>
+          )}
+        </div>
         {state.webhookEvents.length === 0 ? (
           <div className="rounded-xl border border-dashed border-zinc-800 px-4 py-6 text-sm text-zinc-500">{copy.noWebhookHint}</div>
         ) : (
@@ -1174,6 +1278,14 @@ export function OrderCenterClient() {
 
   return (
     <div className="space-y-6">
+      {isDemoMode ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          <span>{copy.demoBannerText}</span>
+          <Button variant="secondary" size="sm" onClick={exitDemoMode} disabled={exitingDemo}>
+            {exitingDemo ? (lang === 'zh' ? '退出中…' : 'Exiting…') : copy.exitDemoButton}
+          </Button>
+        </div>
+      ) : null}
       <PageHeader
         title={copy.title}
         description={copy.description}

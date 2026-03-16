@@ -68,6 +68,12 @@ Add the following to your `.env.local` file:
 UBEREATS_CLIENT_ID=your_client_id_here
 UBEREATS_CLIENT_SECRET=your_client_secret_here
 
+# Webhook: so real-time orders show in the dashboard (use your Clerk user ID)
+UBEREATS_WEBHOOK_USER_KEY=user_xxx
+
+# Webhook signing: if Uber Dashboard provides a webhook secret, set it here (else CLIENT_SECRET is used)
+# UBEREATS_WEBHOOK_SIGNING_KEY=your_webhook_signing_secret
+
 # Optional: For enhanced security with client assertion
 UBEREATS_ASYMMETRIC_KEY_ID=your_key_id_here
 UBEREATS_PRIVATE_KEY_PEM=-----BEGIN PRIVATE KEY-----

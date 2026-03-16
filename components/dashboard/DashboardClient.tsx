@@ -86,7 +86,9 @@ export function DashboardClient() {
           setDailyBriefingProvider(undefined);
         }
         setDailyBriefingWarning(
-          typeof payload.warning === 'string' && payload.warning ? payload.warning : undefined
+          payload.provider === 'nova'
+            ? undefined
+            : (typeof payload.warning === 'string' && payload.warning ? payload.warning : undefined)
         );
       } catch {
         if (disposed) return;
