@@ -8,6 +8,8 @@ export interface UberEatsConfig {
   clientSecret: string;
   redirectUri: string;
   scope?: string[];
+  /** OAuth token 端点，必须与 start 授权时一致（沙箱用 sandbox-login.uber.com，生产用 auth.uber.com） */
+  tokenUrl?: string;
 }
 
 export interface UberEatsOrder {
@@ -79,11 +81,15 @@ export class UberEatsClient {
     return `https://login.uber.com/oauth/v2/authorize?${params.toString()}`;
   }
 
+  private getTokenUrl(): string {
+    return this.config.tokenUrl || 'https://login.uber.com/oauth/v2/token';
+  }
+
   /**
    * Exchange authorization code for tokens
    */
   async exchangeCodeForTokens(code: string): Promise<UberEatsTokenResponse> {
-    const response = await fetch('https://login.uber.com/oauth/v2/token', {
+    const response = await fetch(this.getTokenUrl(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -113,7 +119,7 @@ export class UberEatsClient {
    * Refresh access token
    */
   async refreshAccessToken(refreshToken: string): Promise<UberEatsTokenResponse> {
-    const response = await fetch('https://login.uber.com/oauth/v2/token', {
+    const response = await fetch(this.getTokenUrl(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -236,22 +242,36 @@ export class UberEatsClient {
 // Singleton instance
 let ubereatsClient: UberEatsClient | null = null;
 
+function getUberEatsTokenUrl(): string {
+  const env = process.env.UBEREATS_OAUTH_TOKEN_URL?.trim();
+  if (env) return env;
+  const uberEnv = (process.env.UBEREATS_ENVIRONMENT || process.env.UBEREATS_ENV || 'sandbox').toLowerCase().trim();
+  return uberEnv === 'production'
+    ? 'https://auth.uber.com/oauth/v2/token'
+    : 'https://sandbox-login.uber.com/oauth/v2/token';
+}
+
 export function getUberEatsClient(): UberEatsClient {
   if (!ubereatsClient) {
     const clientId = process.env.UBEREATS_CLIENT_ID;
     const clientSecret = process.env.UBEREATS_CLIENT_SECRET;
+    const base = (process.env.NEXT_PUBLIC_APP_URL || '').trim().replace(/\/$/, '');
     const redirectUri =
-      process.env.UBEREATS_REDIRECT_URI ||
-      `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/ubereats/callback`;
+      process.env.UBEREATS_REDIRECT_URI?.trim() ||
+      (base ? `${base}/api/integrations/ubereats/callback` : '');
 
     if (!clientId || !clientSecret) {
       throw new Error('UberEats credentials not configured');
+    }
+    if (!redirectUri) {
+      throw new Error('UberEats redirect URI not set (set NEXT_PUBLIC_APP_URL or UBEREATS_REDIRECT_URI)');
     }
 
     ubereatsClient = new UberEatsClient({
       clientId,
       clientSecret,
       redirectUri,
+      tokenUrl: getUberEatsTokenUrl(),
     });
   }
   return ubereatsClient;

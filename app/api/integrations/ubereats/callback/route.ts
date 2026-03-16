@@ -43,8 +43,9 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.redirect(new URL('/settings?success=ubereats_connected', base));
-  } catch (error) {
-    console.error('[UberEats Callback] Error:', error);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[UberEats Callback] Error:', message, err);
     return NextResponse.redirect(new URL('/settings?error=ubereats_auth_failed', base));
   }
 }
