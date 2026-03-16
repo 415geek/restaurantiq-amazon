@@ -220,7 +220,7 @@ export async function POST(req: NextRequest) {
     const envUserKey = process.env.UBEREATS_WEBHOOK_USER_KEY?.trim();
     const storedUserKey = envUserKey ? null : await getWebhookUserKey();
     const { userId } = await auth();
-    const userKey = envUserKey || storedUserKey || userId ?? 'anonymous';
+    const userKey = (envUserKey || storedUserKey || userId) ?? 'anonymous';
 
     try {
       const events = await listUberEatsWebhookEvents(1);
