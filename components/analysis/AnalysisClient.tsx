@@ -46,6 +46,24 @@ import {
   saveAnalysisRuntimeState,
 } from '@/lib/client/analysis-runtime';
 
+/** 不在 UI 中展示 Nova market scan 连接失败类提示（含历史缓存数据） */
+function stripNovaMarketScanFailureWarning(text: string | undefined): string | undefined {
+  if (!text || typeof text !== 'string') return text;
+  const trimmed = text
+    .replace(/\bAmazon Nova market scan failed[^.]*\.?\s*/gi, '')
+    .replace(/\bNova Act [^.]*market scan[^.]*\.?\s*/gi, '')
+    .trim();
+  return trimmed || undefined;
+}
+
+function filterNovaMarketScanFailureWarnings(warnings: string[] | undefined): string[] {
+  if (!Array.isArray(warnings) || warnings.length === 0) return [];
+  return warnings.filter(
+    (w) =>
+      !/Amazon Nova market scan failed/i.test(w) && !/Nova Act .* market scan failed/i.test(w)
+  );
+}
+
 function formatCompactNumber(value?: number) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
   return new Intl.NumberFormat('en-US', {
@@ -565,7 +583,7 @@ export function AnalysisClient() {
         summary={analysis.summary}
         signals={analysis.agentSignals}
         source={analysis.source}
-        warning={analysis.warning}
+        warning={stripNovaMarketScanFailureWarning(analysis.warning)}
       />
 
       {analysis.businessIntel ? (
@@ -817,9 +835,9 @@ function BusinessIntelPanel({
                 <p className="text-xs text-zinc-400">
                   {lang === 'zh' ? '平台菜单/活动情报来源' : 'Platform menu/campaign source'}: {intel.platformIntel.source}
                 </p>
-                {intel.platformIntel.warnings?.length ? (
+                {(filterNovaMarketScanFailureWarnings(intel.platformIntel.warnings).length > 0) ? (
                   <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-2 text-[11px] text-yellow-100">
-                    {intel.platformIntel.warnings.join(' ')}
+                    {filterNovaMarketScanFailureWarnings(intel.platformIntel.warnings).join(' ')}
                   </div>
                 ) : null}
                 <div className="grid gap-2 sm:grid-cols-2">
